@@ -13,7 +13,7 @@ import appeng.menu.implementations.UpgradeableMenu;
 
 import io.github.lounode.ae2pattern.common.block.entity.PatternTransfererBlockEntity;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
-import io.github.lounode.ae2pattern.common.pattern.PatternClassifier;
+import io.github.lounode.ae2pattern.api.PatternClassifier;
 import io.github.lounode.ae2pattern.common.pattern.TransferMode;
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 

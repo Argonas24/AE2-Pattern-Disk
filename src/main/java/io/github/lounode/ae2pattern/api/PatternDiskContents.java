@@ -22,6 +22,12 @@ import net.minecraft.world.item.ItemStack;
  * (e.g. {@code ae2:crafting_pattern}). An empty disk has {@code null} type until the first pattern
  * is added, at which point it locks to that pattern's type.</p>
  *
+ * <p>Every element of {@code patterns} is an AE2 <em>encoded pattern</em> stack - the item a pattern
+ * terminal produces, not the blank it was encoded from. What one of them means (its inputs, its outputs,
+ * how it is performed) is not in this record: decode it with
+ * {@link PatternDiskApi#decodePattern(ItemStack, Level)}. The distinction matters because a slot can be
+ * asked whether a stack is a pattern disk without ever understanding the patterns on it.</p>
+ *
  * <p>The {@code patterns} list is copied on construction, so the record itself never changes - but its
  * elements are {@link ItemStack}s, which are mutable. Every write path replaces the whole record rather
  * than editing an element, and consumers that hand these stacks to something that could modify them
@@ -29,7 +35,8 @@ import net.minecraft.world.item.ItemStack;
  * in place would leave a memo matching its own key while describing different contents.</p>
  *
  * @param type     the locked encoded-pattern item id, or {@code null} while the disk is untyped
- * @param patterns the encoded pattern stacks currently stored
+ * @param patterns the encoded pattern stacks currently stored; each is meant to be decoded through
+ *                 {@link PatternDiskApi#decodePattern(ItemStack, Level)}, never by item class
  */
 public record PatternDiskContents(
         String type,

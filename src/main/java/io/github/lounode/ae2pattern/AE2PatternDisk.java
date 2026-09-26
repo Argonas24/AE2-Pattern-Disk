@@ -48,7 +48,7 @@ public class AE2PatternDisk {
         // decode caches are rebuilt from slots on the next change.
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
                 (net.neoforged.neoforge.event.AddReloadListenerEvent event) ->
-                        io.github.lounode.ae2pattern.common.pattern.PatternClassifier.invalidateDecodedCache());
+                        io.github.lounode.ae2pattern.api.PatternClassifier.invalidateDecodedCache());
     }
 
     /**

@@ -14,6 +14,8 @@ import appeng.api.stacks.AEKey;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.GenericStack;
 
+import io.github.lounode.ae2pattern.api.PatternClassifier;
+
 /**
  * A lightweight crafting-tree index over the patterns stored on a set of pattern disks.
  *

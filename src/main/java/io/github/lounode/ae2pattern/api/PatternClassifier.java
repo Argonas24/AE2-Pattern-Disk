@@ -1,5 +1,6 @@
-package io.github.lounode.ae2pattern.common.pattern;
+package io.github.lounode.ae2pattern.api;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -16,7 +17,6 @@ import appeng.api.crafting.IPatternDetails;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.stacks.AEItemKey;
 
-import io.github.lounode.ae2pattern.api.PatternDiskContents;
 
 /**
  * Classifies AE2 encoded pattern items into a stable type key used for disk type-locking.
@@ -25,6 +25,10 @@ import io.github.lounode.ae2pattern.api.PatternDiskContents;
  * {@code ae2:processing_pattern}, {@code ae2:smithing_table_pattern}, {@code ae2:stonecutting_pattern}).
  * Custom pattern items from other AE2 addons are classified by their own item id, so a disk can lock
  * to them too.</p>
+ *
+ * <p>Reach these through {@link PatternDiskApi}, whose decode entry points forward here: that facade is
+ * the versioned surface, and the members below it are not. The two carrying {@link ApiStatus.Internal}
+ * in particular are plumbing this mod needs and no addon does.</p>
  */
 public final class PatternClassifier {
 
@@ -85,6 +89,7 @@ public final class PatternClassifier {
     /**
      * Returns the type key for an already-decoded pattern.
      */
+    @Nullable
     public static String typeOf(IPatternDetails details) {
         return patternTypeId(details);
     }
@@ -111,7 +116,10 @@ public final class PatternClassifier {
     /**
      * Drops every memoized decode. Called when server data reloads: a pattern that decoded to one thing
      * can decode to another afterwards, and the cache is keyed by items that did not change.
+     * <p>Not part of {@link PatternDiskApi}: whoever owns the cache also owns the reload, and an addon
+     * observing the same reload event gets the invalidation for free.</p>
      */
+    @ApiStatus.Internal
     public static void invalidateDecodedCache() {
         GENERATION.incrementAndGet();
         DECODED_STORED.clear();
@@ -124,7 +132,11 @@ public final class PatternClassifier {
      * @param contents  磁盘当前内容
      * @param candidate 已解码的待加入样板
      * @return 存在同主产物冲突时返回 true
+     *
+     * <p>Half of the write-admission rule. {@link PatternDiskApi} has no write entry point, so exposing
+     * this on its own would let a caller check a write it cannot perform.</p>
      */
+    @ApiStatus.Internal
     public static boolean hasSamePrimaryOutput(PatternDiskContents contents, IPatternDetails candidate,
             Level level) {
         if (contents == null || candidate == null) {
@@ -143,7 +155,7 @@ public final class PatternClassifier {
         return false;
     }
 
-    private static List<IPatternDetails> decodedStored(PatternDiskContents contents, Level level) {
+    static List<IPatternDetails> decodedStored(PatternDiskContents contents, Level level) {
         var patterns = contents.patterns();
         if (patterns.isEmpty() || level == null) {
             return List.of();

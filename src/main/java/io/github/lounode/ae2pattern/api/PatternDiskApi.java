@@ -13,6 +13,7 @@ import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
+import appeng.api.crafting.IPatternDetails;
 import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionHost;
@@ -31,6 +32,11 @@ import appeng.api.networking.security.IActionHost;
  *   <li><b>Reading a disk.</b> {@link #contents(ItemStack)} says what one holds without naming the
  *       disk's item class, so a slot filter can keep a stack opaque and still ask. {@link #isPatternDisk}
  *       answers the same question without exposing the class at all.</li>
+ *   <li><b>Decoding what is on a disk.</b> {@link #contents(ItemStack)} returns encoded pattern stacks;
+ *       {@link #decodePattern} turns one into its inputs, outputs and how it is performed, and
+ *       {@link #patternType} names the pattern's kind. Reading a disk and understanding a pattern on it
+ *       are separate questions, and this is the second one. When walking a whole disk - repeatedly, or in
+ *       a per-tick path - use {@link #decodePatterns}, which memoizes per contents snapshot.</li>
  *   <li><b>Checking a write before offering it.</b> {@link #canAccept} folds capacity, the disk's locked
  *       type and the same-result exclusion into one answer, so it never disagrees with a real write.</li>
  *   <li><b>Serving the disks a machine holds.</b> {@link #terminalView} wraps slots that contain disks
@@ -62,8 +68,15 @@ public final class PatternDiskApi {
      * {@link PatternDiskContents}, {@link PatternDiskTerminalView} and {@link PatternDiskRemoveInventory}
      * into this package - the old {@code common.pattern} locations are gone, so a 2-era consumer must
      * follow the move even though {@code API_VERSION} still comparing {@code >=} would let it start.</p>
+     *
+     * <p>4 added the decode entry points - {@link #decodePattern}, {@link #patternType} in both overloads,
+     * {@link #isBlankPattern} and {@link #isEncodedPattern} - and moved {@code PatternClassifier} into
+     * this package to back them. Its members outside this class are not versioned surface; reach the
+     * decode through here.</p>
+     *
+     * <p>5 added {@link #decodePatterns}, the memoized form of {@link #decodePattern}.</p>
      */
-    public static final int API_VERSION = 3;
+    public static final int API_VERSION = 5;
 
     private PatternDiskApi() {
     }
@@ -97,6 +110,79 @@ public final class PatternDiskApi {
     public static boolean canAccept(ItemStack disk, ItemStack pattern, Level level) {
         return disk != null && !disk.isEmpty() && disk.getItem() instanceof IPatternDisk item
                 && item.canInsert(disk, pattern, level);
+    }
+
+    /**
+     * @return whether {@code stack} is an AE2 blank pattern - the thing a terminal charges from the
+     *         network for every pattern taken off a disk. {@code null} and empty stacks answer
+     *         {@code false}
+     */
+    public static boolean isBlankPattern(ItemStack stack) {
+        return PatternClassifier.isBlankPattern(stack);
+    }
+
+    /**
+     * @return whether {@code stack} is an encoded pattern, i.e. something {@link #decodePattern} can
+     *         turn into details; an unencoded or blank stack answers {@code false}
+     */
+    public static boolean isEncodedPattern(ItemStack stack) {
+        return PatternClassifier.isEncodedPatternStack(stack);
+    }
+
+    /**
+     * Decodes an encoded pattern into what it does: the inputs it consumes, the outputs it produces and
+     * how it is performed. This is the "parsing" half of a disk - {@link #contents(ItemStack)} says what
+     * patterns are <em>on</em> a disk, this says what one of them means.
+     *
+     * <p>Not memoized: each call builds the details afresh. A caller that walks the same disk repeatedly -
+     * a slot filter, a per-tick scan - should use {@link #decodePatterns(PatternDiskContents, Level)}
+     * instead, which reuses a memo keyed by the contents snapshot.</p>
+     *
+     * @param pattern the stack to decode, typically an element of {@link PatternDiskContents#patterns()}
+     * @param level   the level to resolve items in; {@code null} answers {@code null} rather than guessing
+     * @return the decoded details; {@code null} when {@code pattern} is not an encoded pattern, and also
+     *         when it is encoded but cannot be decoded (a pattern naming a recipe that no longer exists)
+     */
+    @Nullable
+    public static IPatternDetails decodePattern(ItemStack pattern, Level level) {
+        return PatternClassifier.decode(pattern, level);
+    }
+
+    /**
+     * Decodes every pattern on {@code contents}. The result is memoized per (contents snapshot, level)
+     * pair and dropped when server data reloads, so walking the same disk in a loop is cheap - the disks
+     * themselves are what change, and a changed disk is a different snapshot.
+     *
+     * <p>A pattern that cannot be decoded is skipped rather than failing the batch, so the returned list
+     * can be shorter than {@link PatternDiskContents#patterns()}.</p>
+     *
+     * @param contents the contents to decode; {@code null} or a {@code null} level yields an empty list
+     * @return the decoded patterns, in disk order, each at most once per memo entry
+     */
+    public static List<IPatternDetails> decodePatterns(PatternDiskContents contents, Level level) {
+        if (contents == null) {
+            return List.of();
+        }
+        return PatternClassifier.decodedStored(contents, level);
+    }
+
+    /**
+     * @return the resource id of the encoded pattern item {@code pattern} is (for example
+     *         {@code ae2:crafting_pattern}), or {@code null} when it is not an encoded pattern
+     */
+    @Nullable
+    public static String patternType(ItemStack pattern, Level level) {
+        return PatternClassifier.typeOf(pattern, level);
+    }
+
+    /**
+     * @return the resource id of the encoded pattern item {@code details} was decoded from - the same
+     *         value {@link PatternDiskContents#type()} holds once a disk is locked to it; {@code null}
+     *         only if {@code details} violates AE2's contract and reports no definition
+     */
+    @Nullable
+    public static String patternType(IPatternDetails details) {
+        return PatternClassifier.typeOf(details);
     }
 
     /**
