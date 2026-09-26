@@ -45,6 +45,7 @@ import appeng.client.gui.widgets.Scrollbar;
 import appeng.client.gui.widgets.ServerSettingToggleButton;
 import appeng.core.localization.ButtonToolTips;
 
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.client.sort.NaturalOrder;
 import io.github.lounode.ae2pattern.client.sort.NaturalSort;
 import io.github.lounode.ae2pattern.client.sort.SortTiers;
@@ -831,7 +832,7 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
 
     /** 光标上是不是拿着一块样板磁盘（只影响要不要发动作，真伪由服务端再判一次）。 */
     private boolean holdingDisk() {
-        return getMenu().getCarried().getItem() instanceof PatternDiskItem;
+        return PatternDiskApi.isPatternDisk(getMenu().getCarried());
     }
 
     /**

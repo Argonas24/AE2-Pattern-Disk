@@ -34,6 +34,13 @@ import net.minecraft.world.item.ItemStack;
  * must copy. Code that memoizes anything against a record instance depends on that: an element edited
  * in place would leave a memo matching its own key while describing different contents.</p>
  *
+ * <p>Because every write replaces the whole record, a snapshot is a content version: one taken before a
+ * write does not equal one taken after, and two snapshots that {@code equals} each other describe the same
+ * patterns. A caller that needs to know whether a disk still holds what it read - to drop a derived list,
+ * or to refuse a change request against a stale view - keeps the snapshot and compares, rather than asking
+ * for a revision number. It is also why the record is a sound cache key, which is what
+ * {@link PatternDiskApi#decodePatterns} uses it as.</p>
+ *
  * @param type     the locked encoded-pattern item id, or {@code null} while the disk is untyped
  * @param patterns the encoded pattern stacks currently stored; each is meant to be decoded through
  *                 {@link PatternDiskApi#decodePattern(ItemStack, Level)}, never by item class

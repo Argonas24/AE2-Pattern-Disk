@@ -27,6 +27,7 @@ import appeng.helpers.patternprovider.PatternContainer;
 import appeng.menu.implementations.MenuTypeBuilder;
 
 import io.github.lounode.ae2pattern.api.IPatternDiskHost;
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.part.PatternDiskManagementTerminalPart;
 import io.github.lounode.ae2pattern.network.DiskContentPayload;
@@ -506,7 +507,8 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
 
     /** 这张盘里有多少张样板：表格靠它决定一张盘占几行（内容本身只对屏幕上的盘下发）。 */
     private static int patternCountOf(ItemStack stack) {
-        return stack.getItem() instanceof PatternDiskItem diskItem ? diskItem.contents(stack).used() : 0;
+        var contents = PatternDiskApi.contents(stack);
+        return contents == null ? 0 : contents.used();
     }
 
     /**

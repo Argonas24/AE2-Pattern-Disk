@@ -49,45 +49,6 @@ import org.slf4j.LoggerFactory;
  */
 public class PatternDiskRemoveInventory implements InternalInventory {
 
-    /** Draws {@code count} blank patterns from the attached ME network, all-or-nothing. */
-    @FunctionalInterface
-    public interface BlankPatternSink {
-        boolean drawBlankPatterns(int count);
-
-        /**
-         * Read-only check: whether the attached ME network currently holds at least {@code count}
-         * blank patterns ({@code = "can we draw?"}). Defaults to {@code true} (compatible with sinks
-         * without a pre-check).
-         *
-         * @see #hasRoomForBlankPatterns(int) the opposite question - can the network *take one back*
-         */
-        default boolean hasBlankPatterns(int count) {
-            return true;
-        }
-
-        /**
-         * Returns {@code count} blank patterns to the attached ME network (undo of
-         * {@link #drawBlankPatterns}). Called when a swap restore re-inserts a just-taken pattern.
-         * Defaults to a no-op for sinks without a restore path.
-         */
-        default boolean returnBlankPatterns(int count) {
-            return true;
-        }
-
-        /**
-         * Read-only check: whether the attached ME network could take {@code count} blank patterns right
-         * now ({@code = "could we return one?"}). Write paths that owe the network a blank pattern ask this
-         * <em>before</em> mutating anything, so a network that cannot take it back makes the write fail
-         * instead of quietly eating the pattern. Defaults to {@code true} (compatible with sinks without a
-         * pre-check).
-         *
-         * @see #hasBlankPatterns(int) the opposite question - does the network *hold* one to draw
-         */
-        default boolean hasRoomForBlankPatterns(int count) {
-            return true;
-        }
-    }
-
     /**
      * Rows this view recently took (blank cost drawn, pattern physically removed, row emptied): the
      * original stack plus its flat terminal index so an AE2 swap restore can re-insert it exactly at
@@ -195,7 +156,13 @@ public class PatternDiskRemoveInventory implements InternalInventory {
 
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
-        return false; // AE2 终端的插入路径一律拒绝（ExtendedAE Plus 的上传走 insertItem，不经此处）
+        // Answering false here made callers conclude this view takes nothing at all. It does take an
+        // encoded pattern whenever an upload policy is installed - insertItem lands it on a disk - so this
+        // answers the same question the write path does, instead of telling the caller a different story.
+        if (stack == null || stack.isEmpty() || !PatternDiskApi.externalUploadPolicy().isActive()) {
+            return false;
+        }
+        return PatternDiskApi.isEncodedPattern(stack);
     }
 
     /**
@@ -234,9 +201,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
         if (level == null) {
             return stack; // not in a level yet: there is no disk state to decode a pattern against
         }
-        // Writing a pattern onto a disk owes the ME network one blank pattern back (the accounting every
-        // write path here follows). Ask first: a network that cannot take it back makes this upload fail
-        // with the pattern still in the caller's hands, rather than letting the blank pattern evaporate.
+        // Fast-fail before probing every disk; writeAndCharge asks the same question for the disk it tries.
         if (blankPatternSink != null && !blankPatternSink.hasRoomForBlankPatterns(1)) {
             return stack;
         }
@@ -254,11 +219,10 @@ public class PatternDiskRemoveInventory implements InternalInventory {
                 return ItemStack.EMPTY; // a disk takes it: report as if the write had landed
             }
             var updated = diskStack.copy();
-            if (!disk.tryInsert(updated, stack, level)) {
+            if (!PatternDiskApi.writeAndCharge(updated, stack, level, blankPatternSink)) {
                 continue; // canInsert said yes: a refusal here means the disk changed, so keep looking
             }
             diskInventory.setItemDirect(slot, updated);
-            returnBlankPattern(slot);
             onChange.run(); // rebuild the provider's pattern list and drop the cached view
             return ItemStack.EMPTY;
         }
@@ -269,12 +233,11 @@ public class PatternDiskRemoveInventory implements InternalInventory {
      * Returns one blank pattern this view owes the ME network, logging the loss when the network will not
      * take it back.
      *
-     * <p><b>This last-resort branch is not the upload path.</b> {@link #insertItem} asks
-     * {@link BlankPatternSink#hasRoomForBlankPatterns} before it writes anything, so an upload can never
-     * reach this log; what can is a swap restore (where refusing to restore would lose the disk's own
-     * pattern instead - the worse trade) and the tiny window between that pre-check and the real insert.
-     * Best effort by design: whatever freed the pattern is already done and is not rolled back, since the
-     * caller offers no fallback destination for it.</p>
+     * <p>Called by the swap restore path only. The upload path's accounting - and its equivalent log line -
+     * lives in {@link PatternDiskApi#writeAndCharge}, which is where uploads are written now; nothing here
+     * is reached by an upload. Restore has no pre-check because refusing to restore would lose the disk's
+     * own pattern instead, which is the worse trade. Best effort by design: whatever freed the pattern is
+     * already done and is not rolled back, since the caller offers no fallback destination for it.</p>
      *
      * @param diskSlot the disk involved, for the log line
      */

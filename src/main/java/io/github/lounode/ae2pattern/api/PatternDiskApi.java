@@ -18,6 +18,9 @@ import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionHost;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Public entry points for addons that <em>carry</em> pattern disks or <em>serve</em> the patterns stored
  * on them.
@@ -39,6 +42,10 @@ import appeng.api.networking.security.IActionHost;
  *       a per-tick path - use {@link #decodePatterns}, which memoizes per contents snapshot.</li>
  *   <li><b>Checking a write before offering it.</b> {@link #canAccept} folds capacity, the disk's locked
  *       type and the same-result exclusion into one answer, so it never disagrees with a real write.</li>
+ *   <li><b>Writing a pattern to a disk.</b> {@link #insert} is the counterpart of {@link #canAccept}: a
+ *       caller told yes writes here and gets the same answer, plus whatever the disk refused. Writing owes
+ *       the ME network a blank pattern, which is what {@link BlankPatternSink} accounts for; pass
+ *       {@code null} when the caller has no network to charge.</li>
  *   <li><b>Serving the disks a machine holds.</b> {@link #terminalView} wraps slots that contain disks
  *       into an inventory whose rows are the patterns <em>on</em> those disks - the shape AE2's pattern
  *       access terminal reads, so the recipes show up there instead of an undecodable disk item.</li>
@@ -75,14 +82,24 @@ public final class PatternDiskApi {
      * decode through here.</p>
      *
      * <p>5 added {@link #decodePatterns}, the memoized form of {@link #decodePattern}.</p>
+     *
+     * <p>6 added the write half - {@link #insert} and the {@link BlankPatternSink} it charges - so a caller
+     * that was told {@link #canAccept} can do the write instead of reaching past the api for it. Also in 6,
+     * this mod's own provider view answers {@code isItemValid} consistently with its write path rather than
+     * always refusing.</p>
      */
-    public static final int API_VERSION = 5;
+    public static final int API_VERSION = 6;
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("ae2_pattern_disk.api");
 
     private PatternDiskApi() {
     }
 
     /**
-     * @return whether {@code stack} is one of this mod's pattern disks, without exposing its item class
+     * @return whether {@code stack} is a pattern disk, without exposing its item class. This asks whether the
+     *         item implements {@link IPatternDisk}, which today only this mod's own disk item does - it is not
+     *         the same question as "does this fit this mod's disk slots", which the slot filters answer by
+     *         naming that item directly
      */
     public static boolean isPatternDisk(ItemStack stack) {
         return stack != null && !stack.isEmpty() && stack.getItem() instanceof IPatternDisk;
@@ -110,6 +127,68 @@ public final class PatternDiskApi {
     public static boolean canAccept(ItemStack disk, ItemStack pattern, Level level) {
         return disk != null && !disk.isEmpty() && disk.getItem() instanceof IPatternDisk item
                 && item.canInsert(disk, pattern, level);
+    }
+
+    /**
+     * Writes one encoded pattern onto {@code disk}, reporting what the disk did not take. This is the
+     * write half of the api and the counterpart of {@link #canAccept}: a caller told "yes" writes here and
+     * gets the same answer. The disk is mutated in place, as any other {@code ItemStack} write.
+     *
+     * <p>Writing onto a disk owes the ME network one blank pattern back. Pass a {@link BlankPatternSink} to
+     * have that accounted for, or {@code null} when the caller has no network to charge - the write is then
+     * purely the disk's business. The sink is asked <em>before</em> anything is written, so a network that
+     * cannot take a blank pattern back fails this with {@code pattern} still in the caller's hands.</p>
+     *
+     * <p>This does not look at {@link #setExternalUploadPolicy}: that policy guards this mod's own provider
+     * view, which only serves the uploader it was built for. A machine from another mod keeps its own disks
+     * in its own slots and writes through here directly.</p>
+     *
+     * @param disk    the disk to write to, mutated in place on success
+     * @param pattern the encoded pattern to write; a stack of more than one is refused, not trimmed
+     * @param level   the level to resolve items in; {@code null} refuses the write rather than guessing
+     * @param sink    the ME network to charge one blank pattern, or {@code null} to charge nobody
+     * @return {@link ItemStack#EMPTY} when the pattern landed, otherwise {@code pattern} unchanged
+     */
+    public static ItemStack insert(ItemStack disk, ItemStack pattern, Level level, @Nullable BlankPatternSink sink) {
+        if (pattern == null) {
+            return ItemStack.EMPTY; // nothing to write, and returning null would break the contract below
+        }
+        return writeAndCharge(disk, pattern, level, sink) ? ItemStack.EMPTY : pattern;
+    }
+
+    /**
+     * The write path {@link #insert} and this mod's own provider view share, so the rules - single item,
+     * room, type lock, primary-output exclusion and the blank-pattern accounting - exist once.
+     *
+     * @return whether {@code disk} took the pattern and was updated; when false it is untouched
+     */
+    static boolean writeAndCharge(ItemStack disk, ItemStack pattern, Level level, @Nullable BlankPatternSink sink) {
+        if (disk == null || disk.isEmpty() || !(disk.getItem() instanceof IPatternDisk item)) {
+            return false;
+        }
+        // Encoded patterns are single items; a stack of them is not something a disk can store, and taking
+        // it would drop the surplus.
+        if (pattern == null || pattern.isEmpty() || pattern.getCount() != 1 || level == null) {
+            return false;
+        }
+        // Ask before writing: a network that cannot take the blank pattern back makes this fail with the
+        // pattern still in the caller's hands, rather than letting one evaporate.
+        if (sink != null && !sink.hasRoomForBlankPatterns(1)) {
+            return false;
+        }
+        if (!item.canInsert(disk, pattern, level)) {
+            return false;
+        }
+        if (!item.tryInsert(disk, pattern, level)) {
+            return false;
+        }
+        if (sink != null && !sink.returnBlankPatterns(1)) {
+            // Best effort by design: whatever freed the pattern is already done and is not rolled back,
+            // since the caller offers no fallback destination for it.
+            LOGGER.warn("A blank pattern owed to the ME network could not be returned on a disk write; "
+                    + "one blank pattern is lost");
+        }
+        return true;
     }
 
     /**

@@ -28,7 +28,7 @@ import appeng.core.definitions.AEItems;
  * {@link #invalidate()}, and its row layout must stay stable while a terminal is open - so the view is
  * cached between rebuilds and only replaced when the disks actually change.</p>
  */
-public final class PatternDiskTerminalView implements PatternDiskRemoveInventory.BlankPatternSink {
+public final class PatternDiskTerminalView implements BlankPatternSink {
 
     private final InternalInventory diskInventory;
     private final Supplier<IGrid> gridSupplier;

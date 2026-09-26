@@ -8,6 +8,10 @@ package io.github.lounode.ae2pattern.api;
  * view it needs, is not something this mod can decide on its own - so it is injected, and defaults to
  * {@link #NONE}, which keeps the view entirely to itself.</p>
  *
+ * <p>This gates <em>this mod's own provider view</em> only. A machine that keeps disks in its own slots
+ * needs nothing from it: writing onto a disk directly is {@link PatternDiskApi#insert}, which is not
+ * gated, and the accounting it owes the network is {@link BlankPatternSink}.</p>
+ *
  * @see PatternDiskApi#setExternalUploadPolicy(ExternalUploadPolicy)
  */
 public interface ExternalUploadPolicy {

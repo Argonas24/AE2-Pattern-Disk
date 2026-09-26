@@ -22,7 +22,8 @@ import appeng.api.networking.IGrid;
  *
  * <p>Collectors are called on the server thread while the terminal rebuilds its disk list; they must not
  * mutate world state. Registration is expected during an integration's setup - the list is never written
- * afterwards, in the same spirit as AE2's own registration facades.</p>
+ * afterwards, and there is no unregister, in the same spirit as AE2's own registration facades: a
+ * registered integration is present for the whole session, so a removal path would be dead code.</p>
  */
 final class PatternDiskHostRegistry {
 
@@ -33,9 +34,14 @@ final class PatternDiskHostRegistry {
     private PatternDiskHostRegistry() {
     }
 
-    /** Ignores a {@code null} collector rather than failing at collection time. */
+    /**
+     * Ignores a {@code null} collector rather than failing at collection time, and ignores a collector
+     * instance that is already registered - an integration that registers the same instance from more than
+     * one code path would otherwise have its hosts reported twice. A fresh lambda is a different instance
+     * and is not caught by this.
+     */
     static void register(@Nullable DiskHostCollector collector) {
-        if (collector != null) {
+        if (collector != null && !COLLECTORS.contains(collector)) {
             COLLECTORS.add(collector);
         }
     }
