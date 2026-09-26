@@ -147,7 +147,9 @@ public final class PatternDiskApi {
      * @param pattern the encoded pattern to write; a stack of more than one is refused, not trimmed
      * @param level   the level to resolve items in; {@code null} refuses the write rather than guessing
      * @param sink    the ME network to charge one blank pattern, or {@code null} to charge nobody
-     * @return {@link ItemStack#EMPTY} when the pattern landed, otherwise {@code pattern} unchanged
+     * @return {@link ItemStack#EMPTY} when the pattern landed, otherwise {@code pattern} unchanged - so test
+     *         with {@code == ItemStack#EMPTY} rather than null, and never pass an empty stack as
+     *         {@code pattern}, which would be reported as a successful write
      */
     public static ItemStack insert(ItemStack disk, ItemStack pattern, Level level, @Nullable BlankPatternSink sink) {
         if (pattern == null) {

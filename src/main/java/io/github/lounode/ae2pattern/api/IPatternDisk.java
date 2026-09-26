@@ -11,9 +11,10 @@ import net.minecraft.world.level.Level;
  * answers the same questions for any stack. This interface exists so a caller can hold a disk-typed
  * reference without depending on {@code common.item.PatternDiskItem}.</p>
  *
- * <p>It is a <em>reader</em>-side type. Implementing it on some other item does not make that item fit this
- * mod's disk slots - the slot filters ask for the disk item itself - so an implementation outside this mod
- * only affects callers that were handed the item anyway.</p>
+ * <p>It is a <em>reader</em>-side type, and in practice only this mod's disk item can implement it: the content
+ * it reports lives in a data component this mod registers, so an item from elsewhere would have nowhere to
+ * keep it. Implementing it would not make such an item fit this mod's disk slots either - the slot filters
+ * still ask for the disk item itself.</p>
  *
  * <p>{@link PatternDiskContents} is an immutable snapshot; every write returns a new record rather than
  * editing one in place. A disk that refuses a write returns {@code false} from {@link #tryInsert} without

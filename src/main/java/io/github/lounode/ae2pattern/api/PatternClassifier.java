@@ -16,6 +16,7 @@ import net.minecraft.world.level.Level;
 import appeng.api.crafting.IPatternDetails;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.stacks.AEItemKey;
+import appeng.core.definitions.AEItems;
 
 
 /**
@@ -75,15 +76,14 @@ public final class PatternClassifier {
     }
 
     /**
-     * Whether the given stack is AE2's blank pattern item.
+     * Whether the given stack is AE2's blank pattern item. Asked from slot filters, so it goes through AE2's
+     * own definition rather than resolving the id itself.
      */
     public static boolean isBlankPattern(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return false;
         }
-        var blank = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                .get(net.minecraft.resources.ResourceLocation.parse("ae2:blank_pattern"));
-        return stack.is(blank);
+        return AEItems.BLANK_PATTERN.is(stack);
     }
 
     /**

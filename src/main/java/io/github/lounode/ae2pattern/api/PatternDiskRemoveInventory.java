@@ -156,9 +156,9 @@ public class PatternDiskRemoveInventory implements InternalInventory {
 
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
-        // Answering false here made callers conclude this view takes nothing at all. It does take an
-        // encoded pattern whenever an upload policy is installed - insertItem lands it on a disk - so this
-        // answers the same question the write path does, instead of telling the caller a different story.
+        // This answers the same question the write path does, rather than reporting false and letting a
+        // caller that asks first conclude the view takes nothing at all. It takes an encoded pattern
+        // whenever an upload policy is installed - insertItem lands it on a disk.
         if (stack == null || stack.isEmpty() || !PatternDiskApi.externalUploadPolicy().isActive()) {
             return false;
         }
@@ -201,7 +201,8 @@ public class PatternDiskRemoveInventory implements InternalInventory {
         if (level == null) {
             return stack; // not in a level yet: there is no disk state to decode a pattern against
         }
-        // Fast-fail before probing every disk; writeAndCharge asks the same question for the disk it tries.
+        // Fast-fail before probing every disk; PatternDiskApi.insert asks the same question for the disk
+        // it tries.
         if (blankPatternSink != null && !blankPatternSink.hasRoomForBlankPatterns(1)) {
             return stack;
         }
@@ -219,7 +220,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
                 return ItemStack.EMPTY; // a disk takes it: report as if the write had landed
             }
             var updated = diskStack.copy();
-            if (!PatternDiskApi.writeAndCharge(updated, stack, level, blankPatternSink)) {
+            if (PatternDiskApi.insert(updated, stack, level, blankPatternSink) != ItemStack.EMPTY) {
                 continue; // canInsert said yes: a refusal here means the disk changed, so keep looking
             }
             diskInventory.setItemDirect(slot, updated);
