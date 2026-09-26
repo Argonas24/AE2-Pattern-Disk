@@ -11,7 +11,7 @@ import appeng.helpers.patternprovider.PatternProviderLogicHost;
 import appeng.util.inv.AppEngInternalInventory;
 
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskContents;
+import io.github.lounode.ae2pattern.api.PatternDiskContents;
 
 /**
  * A {@link PatternProviderLogic} whose available patterns are expanded from the contents of inserted

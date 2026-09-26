@@ -12,7 +12,7 @@ import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEItemKey;
 import appeng.core.definitions.AEItems;
 
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskRemoveInventory;
+import io.github.lounode.ae2pattern.api.PatternDiskRemoveInventory;
 
 /**
  * What the pattern access terminal sees when this integration has taken over an FD Smart Pattern Bus: the

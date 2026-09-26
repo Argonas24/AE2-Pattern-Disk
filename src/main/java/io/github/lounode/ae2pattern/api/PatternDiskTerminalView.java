@@ -1,4 +1,4 @@
-package io.github.lounode.ae2pattern.common.pattern;
+package io.github.lounode.ae2pattern.api;
 
 import java.util.function.Supplier;
 

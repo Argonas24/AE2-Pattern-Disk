@@ -43,7 +43,7 @@ import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskProviderBlockEntity;
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskProviderHost;
 import io.github.lounode.ae2pattern.common.logic.PatternDiskProviderLogic;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
+import io.github.lounode.ae2pattern.api.PatternDiskTerminalView;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskProviderMenu;
 
 /**

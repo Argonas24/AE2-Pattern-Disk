@@ -6,6 +6,7 @@ import net.neoforged.fml.ModList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.github.lounode.ae2pattern.api.ExternalUploadPolicy;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 import io.github.lounode.ae2pattern.common.part.PatternDiskEncodingTerminalPart;
 
@@ -154,5 +155,23 @@ public final class ExtendedAEPlusCompat {
      */
     public static boolean wantsFreeRow(boolean hasLevelSupplier, int freeCapacity) {
         return hasLevelSupplier && isPresent() && freeCapacity > 0;
+    }
+
+    /**
+     * The policy this integration contributes to the api. Presence is re-answered per call rather than
+     * snapshotted, so registration needs no load-order cooperation.
+     */
+    public static ExternalUploadPolicy asUploadPolicy() {
+        return new ExternalUploadPolicy() {
+            @Override
+            public boolean isActive() {
+                return isPresent();
+            }
+
+            @Override
+            public boolean wantsFreeRow(boolean hasLevelSupplier, int freeCapacity) {
+                return ExtendedAEPlusCompat.wantsFreeRow(hasLevelSupplier, freeCapacity);
+            }
+        };
     }
 }

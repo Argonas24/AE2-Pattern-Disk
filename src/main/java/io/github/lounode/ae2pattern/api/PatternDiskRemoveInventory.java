@@ -1,4 +1,4 @@
-package io.github.lounode.ae2pattern.common.pattern;
+package io.github.lounode.ae2pattern.api;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,10 +11,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
 import appeng.api.inventories.InternalInventory;
-
-import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
-import io.github.lounode.ae2pattern.AEPatternRegistries;
-import io.github.lounode.ae2pattern.integration.extendedae_plus.ExtendedAEPlusCompat;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,11 +38,11 @@ import org.slf4j.LoggerFactory;
  * compacted layout.</p>
  *
  * <p>The one write this view accepts is {@link #insertItem}, and only while ExtendedAE Plus is
- * installed (see {@link ExtendedAEPlusCompat}): that mod uploads a pattern to a provider by looking for
+ * installed (see the extendedae_plus integration): that mod uploads a pattern to a provider by looking for
  * an empty row and writing into it, and for this provider the disks are the only place such a write can
  * land.</p>
  *
- * @param diskInventory the provider's disk slot inventory; only {@link PatternDiskItem} slots count
+ * @param diskInventory the provider's disk slot inventory; only {@link IPatternDisk} slots count
  * @param blankPatternSink draws/returns one blank pattern from the ME network; {@code null} refuses extraction
  * @param onChange       invoked after a real mutation so the provider can persist and rebuild the view
  * @param levelSupplier  resolves the level lazily, for decoding a pattern before it is written to a disk
@@ -130,7 +126,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
         int freeCapacity = 0;
         for (int slot = 0; slot < diskInventory.size(); slot++) {
             var stack = diskInventory.getStackInSlot(slot);
-            if (stack.isEmpty() || !(stack.getItem() instanceof PatternDiskItem disk)) {
+            if (stack.isEmpty() || !(stack.getItem() instanceof IPatternDisk disk)) {
                 continue;
             }
             var contents = disk.contents(stack);
@@ -143,7 +139,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
             freeCapacity += Math.max(0, contents.capacity() - contents.used());
         }
         var stored = list.toArray(new DiskRef[0]);
-        if (ExtendedAEPlusCompat.wantsFreeRow(levelSupplier != null, freeCapacity)) {
+        if (PatternDiskApi.externalUploadPolicy().wantsFreeRow(levelSupplier != null, freeCapacity)) {
             // One null row stands for "this provider has room". Every accessor below already answers "empty
             // row" for a null ref, so the stored patterns stay at their flat indices and the free space
             // simply follows them - no second kind of row, and no change to the take path that walks this
@@ -216,7 +212,8 @@ public class PatternDiskRemoveInventory implements InternalInventory {
      * the only way a pattern leaves this view. A simulated call probes the disks and reports as if the
      * write had happened, without writing and without returning a blank pattern.</p>
      *
-     * <p>Compatibility shim: its scope and its exit condition are documented on {@link ExtendedAEPlusCompat}.</p>
+     * <p>Compatibility shim: its scope and its exit condition are documented on the extendedae_plus
+     * integration.</p>
      *
      * <p>The {@code index} belongs to the caller's row scan: rows move between rebuilds and a disk-backed
      * provider decides where a pattern lands, so the index is range-checked but never used to pick a disk.</p>
@@ -227,7 +224,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
     public ItemStack insertItem(int index, ItemStack stack, boolean simulate) {
         // Encoded patterns are single items; a stack of them is not something a disk can store, and taking
         // it would drop the surplus.
-        if (stack.isEmpty() || stack.getCount() != 1 || !ExtendedAEPlusCompat.isPresent()) {
+        if (stack.isEmpty() || stack.getCount() != 1 || !PatternDiskApi.externalUploadPolicy().isActive()) {
             return stack;
         }
         if (index < 0 || index >= refs.length) {
@@ -247,7 +244,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
         // lands, and the upload path offers no way to say otherwise.
         for (int slot = 0; slot < diskInventory.size(); slot++) {
             var diskStack = diskInventory.getStackInSlot(slot);
-            if (diskStack.isEmpty() || !(diskStack.getItem() instanceof PatternDiskItem disk)) {
+            if (diskStack.isEmpty() || !(diskStack.getItem() instanceof IPatternDisk disk)) {
                 continue;
             }
             if (!disk.canInsert(diskStack, stack, level)) {
@@ -297,7 +294,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
 
     private ItemStack getPatternAt(DiskRef ref) {
         var stack = diskInventory.getStackInSlot(ref.diskSlot);
-        if (stack.isEmpty() || !(stack.getItem() instanceof PatternDiskItem disk)) {
+        if (stack.isEmpty() || !(stack.getItem() instanceof IPatternDisk disk)) {
             return ItemStack.EMPTY;
         }
         var patterns = disk.contents(stack).patterns();
@@ -353,7 +350,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
             return false;
         }
         var diskStack = diskInventory.getStackInSlot(ref.diskSlot);
-        if (diskStack.isEmpty() || !(diskStack.getItem() instanceof PatternDiskItem disk)) {
+        if (diskStack.isEmpty() || !(diskStack.getItem() instanceof IPatternDisk disk)) {
             return false;
         }
         var contents = disk.contents(diskStack);
@@ -366,7 +363,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
         if (restored == null) {
             return false; // 恢复失败（满/类型异常）：保持已删状态，不强行写回
         }
-        diskStack.set(AEPatternRegistries.DISK_CONTENTS.get(), restored);
+        PatternDiskComponents.write(diskStack, restored);
         diskInventory.setItemDirect(ref.diskSlot, diskStack);
         // Taking the entry shifted this disk's later rows down by one; putting it back at its original position
         // undoes that, so the rows have to come back too. This row is still null here, which is what keeps it
@@ -429,7 +426,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
 
     private void removePatternAt(DiskRef ref) {
         var stack = diskInventory.getStackInSlot(ref.diskSlot);
-        if (stack.isEmpty() || !(stack.getItem() instanceof PatternDiskItem disk)) {
+        if (stack.isEmpty() || !(stack.getItem() instanceof IPatternDisk disk)) {
             return;
         }
         var contents = disk.contents(stack);
@@ -443,7 +440,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
             return;
         }
         var next = contents.remove(ref.patternIndex);
-        stack.set(AEPatternRegistries.DISK_CONTENTS.get(), next);
+        PatternDiskComponents.write(stack, next);
         diskInventory.setItemDirect(ref.diskSlot, stack);
         // 本行置空（占位），保持 PAT 会话内行数冻结：AE2 PAT 固定每个打开会话的行数，refs 收缩
         // 会使已打开终端与服务端失同步（末尾残留幽灵行）。磁盘内容已真删并自动退行补位，

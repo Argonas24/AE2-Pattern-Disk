@@ -15,7 +15,8 @@ import net.minecraft.world.level.Level;
 import appeng.api.crafting.IPatternDetails;
 
 import io.github.lounode.ae2pattern.common.pattern.PatternClassifier;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskContents;
+import io.github.lounode.ae2pattern.api.IPatternDisk;
+import io.github.lounode.ae2pattern.api.PatternDiskContents;
 import io.github.lounode.ae2pattern.common.pattern.PatternDiskTier;
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 
@@ -29,7 +30,7 @@ import io.github.lounode.ae2pattern.AEPatternRegistries;
  *   <li>Empty disks are untyped; the first inserted pattern determines the locked type.</li>
  * </ul>
  */
-public class PatternDiskItem extends Item {
+public class PatternDiskItem extends Item implements IPatternDisk {
 
     private final PatternDiskTier tier;
 
@@ -49,6 +50,7 @@ public class PatternDiskItem extends Item {
     /**
      * Returns the current contents of the disk, or an empty untyped disk if none is stored yet.
      */
+    @Override
     public PatternDiskContents contents(ItemStack stack) {
         var contents = stack.get(AEPatternRegistries.DISK_CONTENTS.get());
         return contents != null ? contents : PatternDiskContents.empty(capacity());
@@ -106,6 +108,7 @@ public class PatternDiskItem extends Item {
      * larger multi-step move) should use this instead of re-deriving the rule from
      * {@link PatternDiskContents} directly.</p>
      */
+    @Override
     public boolean canInsert(ItemStack disk, ItemStack pattern, Level level) {
         IPatternDetails details = PatternClassifier.decode(pattern, level);
         String patternType = details == null ? null : PatternClassifier.typeOf(details);
@@ -164,6 +167,7 @@ public class PatternDiskItem extends Item {
      *         has no resolvable type, the disk is full, its locked type does not match, or a stored
      *         pattern already produces the same primary output
      */
+    @Override
     public boolean tryInsert(ItemStack disk, ItemStack pattern, Level level) {
         // Decoded once and reused for both the type key and the primary-output check: asking each of them
         // separately would decode the same candidate pattern twice.

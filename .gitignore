@@ -19,6 +19,8 @@ Thumbs.db
 # Local
 logs/
 *.log
+# Tool-written备份（批量替换留下的 .bak），工件本身不进版本库。
+*.bak
 
 # Local development dependency jars.
 # libs/ holds the dev jars build.gradle reaches for (NEO ECO, AECS, ModDevMCP). Each one is a build

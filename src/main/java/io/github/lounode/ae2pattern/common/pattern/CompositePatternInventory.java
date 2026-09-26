@@ -19,7 +19,7 @@ import appeng.api.inventories.InternalInventory;
  *
  * <p>Index routing is positional: part {@code i} owns the index range
  * {@code [starts[i], starts[i] + parts[i].size())}. The composite holds no state of its own, so a
- * caller that rebuilds its parts (as {@link PatternDiskRemoveInventory} does per terminal session)
+ * caller that rebuilds its parts (as {@code PatternDiskRemoveInventory} does per terminal session)
  * gets a correctly re-flowed view.</p>
  *
  * <p><b>{@link #getSlotInv(int)} must be routed to the owning part.</b> AE2's pattern access terminal

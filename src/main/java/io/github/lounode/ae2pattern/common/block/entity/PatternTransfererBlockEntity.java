@@ -26,7 +26,7 @@ import appeng.util.inv.InternalInventoryHost;
 
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.pattern.PatternClassifier;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskContents;
+import io.github.lounode.ae2pattern.api.PatternDiskContents;
 import io.github.lounode.ae2pattern.common.pattern.TransferMode;
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 

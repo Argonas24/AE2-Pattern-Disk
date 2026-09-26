@@ -16,6 +16,8 @@ import appeng.api.crafting.IPatternDetails;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.stacks.AEItemKey;
 
+import io.github.lounode.ae2pattern.api.PatternDiskContents;
+
 /**
  * Classifies AE2 encoded pattern items into a stable type key used for disk type-locking.
  *

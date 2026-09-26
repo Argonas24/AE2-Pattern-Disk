@@ -65,7 +65,7 @@ import org.jetbrains.annotations.Nullable;
 
 import io.github.lounode.ae2pattern.api.IPatternDiskHost;
 import io.github.lounode.ae2pattern.api.PatternDiskApi;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
+import io.github.lounode.ae2pattern.api.PatternDiskTerminalView;
 
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;

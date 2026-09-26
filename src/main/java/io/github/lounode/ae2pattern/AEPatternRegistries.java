@@ -42,7 +42,9 @@ import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
 import io.github.lounode.ae2pattern.common.part.PatternDiskEncodingTerminalPart;
 import io.github.lounode.ae2pattern.common.part.PatternDiskManagementTerminalPart;
 import io.github.lounode.ae2pattern.common.part.PatternDiskProviderPart;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskContents;
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
+import io.github.lounode.ae2pattern.api.PatternDiskContents;
+import io.github.lounode.ae2pattern.integration.extendedae_plus.ExtendedAEPlusCompat;
 import io.github.lounode.ae2pattern.common.pattern.PatternDiskTier;
 
 /**
@@ -323,5 +325,11 @@ public final class AEPatternRegistries {
         MENUS.register(modBus);
         COMPONENTS.register(modBus);
         TABS.register(modBus);
+
+        // The api resolves the component through the holder, so it is handed the holder itself - a
+        // DeferredHolder is not populated until the registry events run, and reads happen after that.
+        PatternDiskApi.bindDiskContentsComponent(DISK_CONTENTS);
+
+        PatternDiskApi.setExternalUploadPolicy(ExtendedAEPlusCompat.asUploadPolicy());
     }
 }

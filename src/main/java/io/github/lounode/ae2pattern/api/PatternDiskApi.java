@@ -6,18 +6,16 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.function.Supplier;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
 import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionHost;
-
-import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskContents;
-import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
 
 /**
  * Public entry points for addons that <em>carry</em> pattern disks or <em>serve</em> the patterns stored
@@ -40,9 +38,16 @@ import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
  *       access terminal reads, so the recipes show up there instead of an undecodable disk item.</li>
  *   <li><b>Listing the disks on a grid.</b> {@link #diskHosts} is the same set the encoding and management
  *       terminals build their lists from.</li>
+ *   <li><b>Holding a slot as a disk.</b> {@link IPatternDisk} is the same questions as
+ *       {@link #contents}/{@link #canAccept}, as an interface - for a caller that must keep a
+ *       disk-typed reference without naming the item. Implementing it does <em>not</em> by itself make
+ *       an item fit this mod's disk slots; only this mod's own disk item does.</li>
  *   <li><b>Letting players write to those disks.</b> {@link #registerDiskHost} hands this mod's disk
  *       encoding terminal the machines to list, so their disks can be encoded into from there.</li>
  * </ul>
+ *
+ * <p>{@link ExternalUploadPolicy} is not in that list on purpose: it exists for the integrations shipped
+ * with this mod, and installing one from outside would switch the upload gate for everyone.</p>
  */
 public final class PatternDiskApi {
 
@@ -52,8 +57,13 @@ public final class PatternDiskApi {
      * against>} rather than equality, or a merely additive release would refuse to start.
      *
      * <p>2 added {@link #diskHosts(IGrid)}.</p>
+     *
+     * <p>3 added {@link IPatternDisk} and {@link ExternalUploadPolicy}, and moved
+     * {@link PatternDiskContents}, {@link PatternDiskTerminalView} and {@link PatternDiskRemoveInventory}
+     * into this package - the old {@code common.pattern} locations are gone, so a 2-era consumer must
+     * follow the move even though {@code API_VERSION} still comparing {@code >=} would let it start.</p>
      */
-    public static final int API_VERSION = 2;
+    public static final int API_VERSION = 3;
 
     private PatternDiskApi() {
     }
@@ -62,7 +72,7 @@ public final class PatternDiskApi {
      * @return whether {@code stack} is one of this mod's pattern disks, without exposing its item class
      */
     public static boolean isPatternDisk(ItemStack stack) {
-        return stack != null && !stack.isEmpty() && stack.getItem() instanceof PatternDiskItem;
+        return stack != null && !stack.isEmpty() && stack.getItem() instanceof IPatternDisk;
     }
 
     /**
@@ -74,7 +84,7 @@ public final class PatternDiskApi {
      */
     @Nullable
     public static PatternDiskContents contents(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof PatternDiskItem disk)) {
+        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof IPatternDisk disk)) {
             return null;
         }
         return disk.contents(stack);
@@ -85,7 +95,7 @@ public final class PatternDiskApi {
      *         the same-result exclusion all live in this answer, so it never disagrees with a write.
      */
     public static boolean canAccept(ItemStack disk, ItemStack pattern, Level level) {
-        return disk != null && !disk.isEmpty() && disk.getItem() instanceof PatternDiskItem item
+        return disk != null && !disk.isEmpty() && disk.getItem() instanceof IPatternDisk item
                 && item.canInsert(disk, pattern, level);
     }
 
@@ -123,6 +133,42 @@ public final class PatternDiskApi {
      */
     public static void registerDiskHost(DiskHostCollector collector) {
         PatternDiskHostRegistry.register(collector);
+    }
+
+    private static @Nullable ExternalUploadPolicy externalUploadPolicy;
+
+    /**
+     * Installs the policy that decides how a disk view cooperates with a mod that uploads patterns
+     * through it. Called from this mod's own setup; until then {@link ExternalUploadPolicy#NONE} answers,
+     * so nothing outside this mod sees a row it did not ask for.
+     *
+     * <p>First write wins: this is a facade for this mod's own wiring, and letting a later caller replace
+     * it would switch the upload gate for every view at once.</p>
+     */
+    @ApiStatus.Internal
+    public static void setExternalUploadPolicy(@Nullable ExternalUploadPolicy policy) {
+        if (externalUploadPolicy == null && policy != null) {
+            externalUploadPolicy = policy;
+        }
+    }
+
+    static ExternalUploadPolicy externalUploadPolicy() {
+        var installed = externalUploadPolicy;
+        return installed == null ? ExternalUploadPolicy.NONE : installed;
+    }
+
+    /**
+     * Binds the data component a disk uses to store its {@link PatternDiskContents}. Called once during
+     * setup by this mod's own registration, which is the only layer that already names the component;
+     * an addon reads and writes disks through this mod's disk item instead.
+     *
+     * <p>First write wins: binding a second component would silently detach the disk views from the
+     * component the disks actually store, so views would report a take the disk never saw.</p>
+     */
+    @ApiStatus.Internal
+    public static void bindDiskContentsComponent(
+            Supplier<DataComponentType<PatternDiskContents>> componentType) {
+        PatternDiskComponents.bind(componentType);
     }
 
     /**
