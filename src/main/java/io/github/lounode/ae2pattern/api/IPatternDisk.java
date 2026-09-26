@@ -11,10 +11,10 @@ import net.minecraft.world.level.Level;
  * answers the same questions for any stack. This interface exists so a caller can hold a disk-typed
  * reference without depending on {@code common.item.PatternDiskItem}.</p>
  *
- * <p>It is a <em>reader</em>-side type, and in practice only this mod's disk item can implement it: the content
- * it reports lives in a data component this mod registers, so an item from elsewhere would have nowhere to
- * keep it. Implementing it would not make such an item fit this mod's disk slots either - the slot filters
- * still ask for the disk item itself.</p>
+ * <p>It is a consumer-side type: a caller holds one, it does not provide one. In practice only this mod's disk
+ * item can implement it anyway - the content it reports lives in a data component this mod registers, so an
+ * item from elsewhere would have nowhere to keep it. Implementing it would not make such an item fit this
+ * mod's disk slots either, since the slot filters still ask for the disk item itself.</p>
  *
  * <p>{@link PatternDiskContents} is an immutable snapshot; every write returns a new record rather than
  * editing one in place. A disk that refuses a write returns {@code false} from {@link #tryInsert} without
@@ -40,4 +40,13 @@ public interface IPatternDisk {
      * @return whether anything was written; {@code false} leaves {@code disk} untouched
      */
     boolean tryInsert(ItemStack disk, ItemStack pattern, Level level);
+
+    /**
+     * Removes the pattern at {@code index} from {@code disk}; an out-of-range index is ignored.
+     *
+     * <p>This does not touch the ME network. A caller removing a pattern the network has indexed owes it a
+     * blank pattern, and paying before removing is that caller's order to keep - a removal that half
+     * happened would lose both the pattern and the blank.</p>
+     */
+    void removeAt(ItemStack disk, int index);
 }

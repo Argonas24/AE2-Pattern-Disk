@@ -204,8 +204,14 @@ public class PatternDiskItem extends Item implements IPatternDisk {
     /**
      * Removes the pattern at the given index. No-op if the index is invalid.
      */
+    @Override
     public void removeAt(ItemStack disk, int index) {
         var contents = contents(disk);
+        if (index < 0 || index >= contents.patterns().size()) {
+            // Return before touching the stack: writing the component back would make a blank disk differ
+            // from an untouched one in the item-key comparison ME storage merges by.
+            return;
+        }
         var updated = contents.remove(index);
         disk.set(AEPatternRegistries.DISK_CONTENTS.get(), updated);
     }

@@ -14,15 +14,21 @@ import appeng.api.networking.security.IActionSource;
 import appeng.core.definitions.AEItems;
 import appeng.api.stacks.AEItemKey;
 
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 
 /**
  * Disk operations on a bus's pattern inventory.
  *
  * <p>The bus hands out its pattern slots as an {@code InternalInventory}; the disks are simply the
- * slots holding a {@link PatternDiskItem}. Every question the auxiliary-store API asks - can this disk
+ * slots holding one of this mod's disk items. Every question the auxiliary-store API asks - can this disk
  * take a pattern, does any disk still have room, what patterns do the disks carry - is answered by one
  * scan here, so the callbacks cannot drift apart from each other.</p>
+ *
+ * <p>Everything it asks <em>about</em> a disk goes through {@link PatternDiskApi}, the same facade an addon
+ * would consume - this integration is a real caller of it, not a special case. Slot admission is the one
+ * exception: {@link #ownsDisk} names the disk item, because "one of ours" is a narrower question than "a
+ * pattern disk".</p>
  *
  * <p>Writes go back through that same inventory rather than mutating a detached copy, so a disk update
  * reaches the bus through its ordinary inventory notification and the bus can re-index what changed.</p>
@@ -33,10 +39,14 @@ final class NeoECOBusDisks {
     }
 
     /** A pattern disk found in a bus slot, kept together with the slot it must be written back to. */
-    private record BusDisk(int slot, ItemStack stack, PatternDiskItem item) {
+    private record BusDisk(int slot, ItemStack stack) {
     }
 
-    /** @return whether {@code stack} is a pattern disk, the container this integration serves from. */
+    /**
+     * @return whether {@code stack} is one of this mod's pattern disks. Naming the item is deliberate: the
+     *         bus must not treat a look-alike implementation as one of ours, and the slots it hands out are
+     *         ours to interpret.
+     */
     static boolean ownsDisk(ItemStack stack) {
         return stack != null && !stack.isEmpty() && stack.getItem() instanceof PatternDiskItem;
     }
@@ -49,9 +59,9 @@ final class NeoECOBusDisks {
             return false;
         }
         for (BusDisk disk : disksIn(inventory)) {
-            // Room, locked type and same-result exclusion all live in PatternDiskItem.canInsert, so this
-            // probe cannot disagree with what tryInsert would actually do.
-            if (disk.item().canInsert(disk.stack(), pattern, level)) {
+            // Room, locked type and same-result exclusion all live in canAccept, so this probe cannot
+            // disagree with what insert would actually do.
+            if (PatternDiskApi.canAccept(disk.stack(), pattern, level)) {
                 return true;
             }
         }
@@ -65,7 +75,8 @@ final class NeoECOBusDisks {
             return false;
         }
         for (BusDisk disk : disksIn(inventory)) {
-            if (!disk.item().contents(disk.stack()).isFull()) {
+            var contents = PatternDiskApi.contents(disk.stack());
+            if (contents != null && !contents.isFull()) {
                 return true;
             }
         }
@@ -80,8 +91,11 @@ final class NeoECOBusDisks {
             return false;
         }
         for (BusDisk disk : disksThatAccept(inventory, pattern, level)) {
-            // tryInsert mutates the stack's contents component rather than returning a new stack.
-            if (!disk.item().tryInsert(disk.stack(), pattern, level)) {
+            // insert mutates the stack's contents component rather than returning a new stack. A null sink asks it
+            // to charge nobody: this is the bus's own auxiliary store, and the blank accounting for a pattern
+            // having reached the network is done by whoever put it there. It also re-runs the acceptance check
+            // disksThatAccept already made, so the candidate pattern is decoded twice for every disk tried.
+            if (PatternDiskApi.insert(disk.stack(), pattern, level, null) != ItemStack.EMPTY) {
                 continue;
             }
             inventory.setItemDirect(disk.slot(), disk.stack());
@@ -102,12 +116,13 @@ final class NeoECOBusDisks {
         List<BusDisk> claimed = new ArrayList<>();
         List<BusDisk> empty = new ArrayList<>();
         for (BusDisk disk : disksIn(inventory)) {
-            // Room, locked type and same-result exclusion all live in canInsert, so this probe cannot
-            // disagree with what tryInsert would actually do.
-            if (!disk.item().canInsert(disk.stack(), pattern, level)) {
+            // Room, locked type and same-result exclusion all live in canAccept, so this probe cannot
+            // disagree with what insert would actually do.
+            if (!PatternDiskApi.canAccept(disk.stack(), pattern, level)) {
                 continue;
             }
-            if (disk.item().contents(disk.stack()).type() == null) {
+            var contents = PatternDiskApi.contents(disk.stack());
+            if (contents == null || contents.type() == null) {
                 empty.add(disk);
             } else {
                 claimed.add(disk);
@@ -125,7 +140,10 @@ final class NeoECOBusDisks {
         }
         List<ItemStack> encoded = new ArrayList<>();
         for (BusDisk disk : disksIn(inventory)) {
-            encoded.addAll(disk.item().contents(disk.stack()).patterns());
+            var contents = PatternDiskApi.contents(disk.stack());
+            if (contents != null) {
+                encoded.addAll(contents.patterns());
+            }
         }
         return encoded;
     }
@@ -150,8 +168,8 @@ final class NeoECOBusDisks {
         }
         long hash = 1L;
         for (BusDisk disk : disksIn(inventory)) {
-            var contents = disk.item().contents(disk.stack());
-            if (contents.patterns().isEmpty()) {
+            var contents = PatternDiskApi.contents(disk.stack());
+            if (contents == null || contents.patterns().isEmpty()) {
                 continue;
             }
             hash = hash * 31L + disk.slot();
@@ -194,10 +212,13 @@ final class NeoECOBusDisks {
             return false;
         }
         ItemStack stack = inventory.getStackInSlot(diskSlot);
-        if (stack.isEmpty() || !(stack.getItem() instanceof PatternDiskItem disk)) {
+        if (stack.isEmpty() || !ownsDisk(stack)) {
             return false;
         }
-        var contents = disk.contents(stack);
+        var contents = PatternDiskApi.contents(stack);
+        if (contents == null) {
+            return false;
+        }
         for (int index = 0; index < contents.patterns().size(); index++) {
             if (!ItemStack.isSameItemSameComponents(contents.patterns().get(index), pattern)) {
                 continue;
@@ -205,9 +226,9 @@ final class NeoECOBusDisks {
             if (!drawBlankPatterns(grid, 1)) {
                 return false;
             }
-            // removeAt edits the stack's contents component in place, the way tryInsert does, so the stack has to
+            // removeAt edits the stack's contents component in place, the way insert does, so the stack has to
             // go back into the slot for the change to be visible there.
-            disk.removeAt(stack, index);
+            PatternDiskApi.removeAt(stack, index);
             inventory.setItemDirect(diskSlot, stack);
             return true;
         }
@@ -218,8 +239,8 @@ final class NeoECOBusDisks {
         List<BusDisk> disks = new ArrayList<>();
         for (int slot = 0; slot < inventory.size(); slot++) {
             ItemStack stack = inventory.getStackInSlot(slot);
-            if (!stack.isEmpty() && stack.getItem() instanceof PatternDiskItem item) {
-                disks.add(new BusDisk(slot, stack, item));
+            if (!stack.isEmpty() && ownsDisk(stack)) {
+                disks.add(new BusDisk(slot, stack));
             }
         }
         return disks;

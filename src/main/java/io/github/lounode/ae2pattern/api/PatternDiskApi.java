@@ -45,16 +45,17 @@ import org.slf4j.LoggerFactory;
  *   <li><b>Writing a pattern to a disk.</b> {@link #insert} is the counterpart of {@link #canAccept}: a
  *       caller told yes writes here and gets the same answer, plus whatever the disk refused. Writing owes
  *       the ME network a blank pattern, which is what {@link BlankPatternSink} accounts for; pass
- *       {@code null} when the caller has no network to charge.</li>
+ *       {@code null} when the caller has no network to charge. {@link #removeAt} is the removal half, and
+ *       leaves the accounting to the caller.</li>
  *   <li><b>Serving the disks a machine holds.</b> {@link #terminalView} wraps slots that contain disks
  *       into an inventory whose rows are the patterns <em>on</em> those disks - the shape AE2's pattern
  *       access terminal reads, so the recipes show up there instead of an undecodable disk item.</li>
  *   <li><b>Listing the disks on a grid.</b> {@link #diskHosts} is the same set the encoding and management
  *       terminals build their lists from.</li>
  *   <li><b>Holding a slot as a disk.</b> {@link IPatternDisk} is the same questions as
- *       {@link #contents}/{@link #canAccept}, as an interface - for a caller that must keep a
- *       disk-typed reference without naming the item. Implementing it does <em>not</em> by itself make
- *       an item fit this mod's disk slots; only this mod's own disk item does.</li>
+ *       {@link #contents}/{@link #canAccept}/{@link #insert}/{@link #removeAt}, as an interface - for a
+ *       caller that must keep a disk-typed reference without naming the item. Implementing it does
+ *       <em>not</em> by itself make an item fit this mod's disk slots; only this mod's own disk item does.</li>
  *   <li><b>Letting players write to those disks.</b> {@link #registerDiskHost} hands this mod's disk
  *       encoding terminal the machines to list, so their disks can be encoded into from there.</li>
  * </ul>
@@ -87,8 +88,10 @@ public final class PatternDiskApi {
      * that was told {@link #canAccept} can do the write instead of reaching past the api for it. Also in 6,
      * this mod's own provider view answers {@code isItemValid} consistently with its write path rather than
      * always refusing.</p>
+     *
+     * <p>7 added {@link #removeAt}, the removal half of a write, and the same method on {@link IPatternDisk}.</p>
      */
-    public static final int API_VERSION = 6;
+    public static final int API_VERSION = 7;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("ae2_pattern_disk.api");
 
@@ -156,6 +159,23 @@ public final class PatternDiskApi {
             return ItemStack.EMPTY; // nothing to write, and returning null would break the contract below
         }
         return writeAndCharge(disk, pattern, level, sink) ? ItemStack.EMPTY : pattern;
+    }
+
+    /**
+     * Removes the pattern at {@code index} from {@code disk}; an out-of-range index is ignored.
+     *
+     * <p>This is the raw half of taking a pattern off a disk - it does not touch the ME network. A caller
+     * removing a pattern the network has indexed owes it a blank pattern, and paying before removing is that
+     * caller's order to keep: see {@link BlankPatternSink#drawBlankPatterns}. To find the index, match the
+     * stack against {@link PatternDiskContents#patterns()}.</p>
+     *
+     * @param disk  the disk to remove from; anything that is not a pattern disk is ignored
+     * @param index the index into {@link PatternDiskContents#patterns()}
+     */
+    public static void removeAt(ItemStack disk, int index) {
+        if (disk != null && !disk.isEmpty() && disk.getItem() instanceof IPatternDisk patternDisk) {
+            patternDisk.removeAt(disk, index);
+        }
     }
 
     /**
