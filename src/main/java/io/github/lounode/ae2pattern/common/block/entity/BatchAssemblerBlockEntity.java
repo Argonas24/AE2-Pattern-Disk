@@ -64,6 +64,7 @@ import org.slf4j.LoggerFactory;
 import org.jetbrains.annotations.Nullable;
 
 import io.github.lounode.ae2pattern.api.IPatternDiskHost;
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
 
 import io.github.lounode.ae2pattern.AEPatternRegistries;
@@ -2032,7 +2033,7 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
      * Terminal view shared with the provider (see {@link PatternDiskTerminalView}): the pattern access
      * terminal has to read the disks, never this machine's derived recipe pool.
      */
-    private final PatternDiskTerminalView terminalView = new PatternDiskTerminalView(diskInv,
+    private final PatternDiskTerminalView terminalView = PatternDiskApi.terminalView(diskInv,
             this::getGrid, this, this::markTerminalChanged, this::getLevel);
 
     @Override

@@ -1,4 +1,4 @@
-package io.github.lounode.ae2pattern.common.block.entity;
+package io.github.lounode.ae2pattern.api;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,21 +10,21 @@ import org.slf4j.LoggerFactory;
 
 import appeng.api.networking.IGrid;
 
-import io.github.lounode.ae2pattern.api.DiskHostCollector;
-import io.github.lounode.ae2pattern.api.IPatternDiskHost;
-
 /**
- * Registry for disk hosts that live outside this mod (integration-provided machines).
+ * Storage for the collectors registered through {@link PatternDiskApi#registerDiskHost}. Package-private on
+ * purpose: {@link PatternDiskApi} is the versioned entry point, and a second public door into the same list
+ * would let an addon past that gate.
  *
  * <p>The pattern disk encoding terminal discovers disk slots by scanning grid machines for
- * {@link IPatternDiskHost}. Machines from other mods cannot implement that interface at compile
- * time, so an integration registers a {@link DiskHostCollector} here and the terminal merges the
- * collected hosts into its disk list, exactly as if the machines implemented the interface.</p>
+ * {@link IPatternDiskHost}. Machines from other mods cannot implement that interface at compile time, so an
+ * integration registers a {@link DiskHostCollector} and the terminal merges the collected hosts into its disk
+ * list, exactly as if the machines implemented the interface.</p>
  *
- * <p>Collectors are called on the server thread while the terminal rebuilds its disk list; they must
- * not mutate world state.</p>
+ * <p>Collectors are called on the server thread while the terminal rebuilds its disk list; they must not
+ * mutate world state. Registration is expected during an integration's setup - the list is never written
+ * afterwards, in the same spirit as AE2's own registration facades.</p>
  */
-public final class PatternDiskHostRegistry {
+final class PatternDiskHostRegistry {
 
     private static final List<DiskHostCollector> COLLECTORS = new CopyOnWriteArrayList<>();
 
@@ -33,15 +33,17 @@ public final class PatternDiskHostRegistry {
     private PatternDiskHostRegistry() {
     }
 
-    /** Registers a collector. Safe to call from an integration's server-side initialisation. */
-    public static void register(DiskHostCollector collector) {
-        COLLECTORS.add(collector);
+    /** Ignores a {@code null} collector rather than failing at collection time. */
+    static void register(@Nullable DiskHostCollector collector) {
+        if (collector != null) {
+            COLLECTORS.add(collector);
+        }
     }
 
     /**
      * @return every extra disk host contributed for {@code grid}; empty when no integration is loaded
      */
-    public static List<IPatternDiskHost> collectExtra(@Nullable IGrid grid) {
+    static List<IPatternDiskHost> collectExtra(@Nullable IGrid grid) {
         if (grid == null || COLLECTORS.isEmpty()) {
             return List.of();
         }

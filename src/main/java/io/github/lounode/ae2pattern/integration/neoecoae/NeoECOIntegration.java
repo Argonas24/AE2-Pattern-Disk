@@ -6,7 +6,7 @@ import java.util.List;
 import appeng.api.networking.IGrid;
 
 import io.github.lounode.ae2pattern.api.IPatternDiskHost;
-import io.github.lounode.ae2pattern.common.block.entity.PatternDiskHostRegistry;
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 
 import org.slf4j.Logger;
@@ -98,7 +98,7 @@ public class NeoECOIntegration {
         // The disks also have to reach the encoding terminal. That terminal discovers disk slots by
         // scanning grid machines for IPatternDiskHost, which a machine from another mod cannot implement,
         // so the bus has to be handed over through the registry instead.
-        PatternDiskHostRegistry.register(grid -> hostsOn(grid, busClass, handles));
+        PatternDiskApi.registerDiskHost(grid -> hostsOn(grid, busClass, handles));
         LOGGER.info("[AE2-Pattern-Disk] FD Smart Pattern Bus disks are now listed in the encoding terminal");
 
         // And the pattern access terminal gets a view of the bus in which the disks' recipes can be taken,

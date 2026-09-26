@@ -60,7 +60,7 @@ import io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic;
 import io.github.lounode.ae2pattern.common.menu.slot.NetworkBlankPatternSlot;
 import io.github.lounode.ae2pattern.common.part.PatternDiskEncodingTerminalPart;
 import io.github.lounode.ae2pattern.api.IPatternDiskHost;
-import io.github.lounode.ae2pattern.common.block.entity.PatternDiskHostRegistry;
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.network.DiskListPayload;
 
 /**
@@ -1377,32 +1377,7 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
      * <p>子类可读：管理终端要连“一张盘都没插”的机器一起列出来，所以不能只依赖磁盘清单。</p>
      */
     protected List<IPatternDiskHost> collectDiskHosts() {
-        var grid = getGrid();
-        if (grid == null) {
-            return List.of();
-        }
-
-        var seen = java.util.Collections
-                .newSetFromMap(new java.util.IdentityHashMap<IPatternDiskHost, Boolean>());
-        var hosts = new java.util.ArrayList<IPatternDiskHost>();
-
-        for (var machineClass : grid.getMachineClasses()) {
-            if (machineClass == null || !IPatternDiskHost.class.isAssignableFrom(machineClass)) {
-                continue;
-            }
-            for (var machine : grid.getActiveMachines(machineClass)) {
-                if (machine instanceof IPatternDiskHost host && seen.add(host)) {
-                    hosts.add(host);
-                }
-            }
-        }
-
-        for (var host : PatternDiskHostRegistry.collectExtra(grid)) {
-            if (host != null && seen.add(host)) {
-                hosts.add(host);
-            }
-        }
-        return hosts;
+        return PatternDiskApi.diskHosts(getGrid());
     }
 
     /** Appends every pattern disk currently sitting in {@code host}'s disk inventory. */

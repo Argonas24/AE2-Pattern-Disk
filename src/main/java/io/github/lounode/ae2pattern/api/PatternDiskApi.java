@@ -1,5 +1,9 @@
 package io.github.lounode.ae2pattern.api;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.function.Supplier;
 
 import org.jetbrains.annotations.Nullable;
@@ -11,7 +15,6 @@ import appeng.api.inventories.InternalInventory;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionHost;
 
-import io.github.lounode.ae2pattern.common.block.entity.PatternDiskHostRegistry;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.pattern.PatternDiskContents;
 import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
@@ -20,18 +23,23 @@ import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
  * Public entry points for addons that <em>carry</em> pattern disks or <em>serve</em> the patterns stored
  * on them.
  *
- * <p>Everything reachable from this class is stable surface: the methods here, together with every type
- * that appears in their signatures, change only with {@link #API_VERSION} - which an addon can assert
- * once during its own setup, to fail loudly rather than misbehave quietly.</p>
+ * <p>Everything reachable from this class is stable surface: the methods here, together with every type that
+ * appears in their signatures <em>or in this class's body</em>, change only with {@link #API_VERSION} - which
+ * an addon can assert once during its own setup, to fail loudly rather than misbehave quietly.</p>
  *
  * <h2>What an addon usually needs</h2>
  *
  * <ul>
  *   <li><b>Reading a disk.</b> {@link #contents(ItemStack)} says what one holds without naming the
- *       disk's item class, so a slot filter can keep a stack opaque and still ask.</li>
+ *       disk's item class, so a slot filter can keep a stack opaque and still ask. {@link #isPatternDisk}
+ *       answers the same question without exposing the class at all.</li>
+ *   <li><b>Checking a write before offering it.</b> {@link #canAccept} folds capacity, the disk's locked
+ *       type and the same-result exclusion into one answer, so it never disagrees with a real write.</li>
  *   <li><b>Serving the disks a machine holds.</b> {@link #terminalView} wraps slots that contain disks
  *       into an inventory whose rows are the patterns <em>on</em> those disks - the shape AE2's pattern
  *       access terminal reads, so the recipes show up there instead of an undecodable disk item.</li>
+ *   <li><b>Listing the disks on a grid.</b> {@link #diskHosts} is the same set the encoding and management
+ *       terminals build their lists from.</li>
  *   <li><b>Letting players write to those disks.</b> {@link #registerDiskHost} hands this mod's disk
  *       encoding terminal the machines to list, so their disks can be encoded into from there.</li>
  * </ul>
@@ -39,10 +47,13 @@ import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
 public final class PatternDiskApi {
 
     /**
-     * Version of this entry point. It only changes when a signature reachable from this class changes;
-     * an addon may assert it at startup to fail loudly instead of misbehaving quietly.
+     * Version of this entry point. It changes whenever a signature reachable from this class changes, and
+     * also when one is added - so an addon should assert {@code API_VERSION >= <the version it was built
+     * against>} rather than equality, or a merely additive release would refuse to start.
+     *
+     * <p>2 added {@link #diskHosts(IGrid)}.</p>
      */
-    public static final int API_VERSION = 1;
+    public static final int API_VERSION = 2;
 
     private PatternDiskApi() {
     }
@@ -98,6 +109,8 @@ public final class PatternDiskApi {
      * @param machine    the host, used as the action source for that accounting
      * @param onChanged  invoked after a real mutation so the host can persist and rebuild
      * @param level      resolves the level, needed to decode a pattern before it is written to a disk
+     *
+     * @apiNote Server-side only: a grid is a server concept, so a client-side call has nothing to attach to.
      */
     public static PatternDiskTerminalView terminalView(InternalInventory diskSlots, Supplier<IGrid> grid,
             IActionHost machine, Runnable onChanged, Supplier<Level> level) {
@@ -110,5 +123,41 @@ public final class PatternDiskApi {
      */
     public static void registerDiskHost(DiskHostCollector collector) {
         PatternDiskHostRegistry.register(collector);
+    }
+
+    /**
+     * Every disk host currently on {@code grid}: the machines that implement {@link IPatternDiskHost}
+     * themselves, plus whatever the registered {@link DiskHostCollector}s report - the latter being how a
+     * machine from another mod gets listed without depending on this one.
+     *
+     * <p>This is the same set the disk encoding and management terminals build their lists from, so an
+     * addon that wants to mirror or extend that listing reads it here rather than re-deriving it.</p>
+     *
+     * @param grid the grid to scan; {@code null} yields an empty list
+     * @return the hosts, each at most once (compared by object identity), in machine-then-collector order;
+     *         an immutable list, empty on the client side (a grid is a server concept)
+     */
+    public static List<IPatternDiskHost> diskHosts(@Nullable IGrid grid) {
+        if (grid == null) {
+            return List.of();
+        }
+        var seen = Collections.newSetFromMap(new IdentityHashMap<IPatternDiskHost, Boolean>());
+        var hosts = new ArrayList<IPatternDiskHost>();
+        for (var machineClass : grid.getMachineClasses()) {
+            if (machineClass == null || !IPatternDiskHost.class.isAssignableFrom(machineClass)) {
+                continue;
+            }
+            for (var machine : grid.getActiveMachines(machineClass)) {
+                if (machine instanceof IPatternDiskHost host && seen.add(host)) {
+                    hosts.add(host);
+                }
+            }
+        }
+        for (var host : PatternDiskHostRegistry.collectExtra(grid)) {
+            if (host != null && seen.add(host)) {
+                hosts.add(host);
+            }
+        }
+        return List.copyOf(hosts);
     }
 }

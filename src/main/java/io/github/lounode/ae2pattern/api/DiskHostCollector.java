@@ -14,6 +14,11 @@ import appeng.api.networking.IGrid;
  *
  * <p>Collectors are called on the server thread while the terminal rebuilds its disk list. They must not
  * mutate world state, and should return the hosts as they are at that moment.</p>
+ *
+ * <p><b>Return stable instances.</b> The terminal de-duplicates hosts by object identity, so a collector that
+ * builds a fresh adapter object on every call defeats that check and makes its disks appear more than once.
+ * Either keep the adapter instances, or have {@link IPatternDiskHost#getIdentitySalt()} and
+ * {@link IPatternDiskHost#getBlockPos()} be unique per host.</p>
  */
 @FunctionalInterface
 public interface DiskHostCollector {

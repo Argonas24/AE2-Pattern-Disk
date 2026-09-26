@@ -23,6 +23,7 @@ import appeng.util.SettingsFrom;
 import appeng.util.inv.AppEngInternalInventory;
 import appeng.util.inv.InternalInventoryHost;
 
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.pattern.PatternDiskTerminalView;
 
@@ -45,7 +46,7 @@ public class PatternDiskProviderBlockEntity extends PatternProviderBlockEntity
      * open pattern access terminal keeps using the instance it grabbed at open time (rows frozen), so
      * any disk change invalidates it and the next terminal that opens re-scans the disks.
      */
-    private final PatternDiskTerminalView terminalView = new PatternDiskTerminalView(diskInventory,
+    private final PatternDiskTerminalView terminalView = PatternDiskApi.terminalView(diskInventory,
             () -> getMainNode().getGrid(), this, this::markTerminalChanged, this::getLevel);
 
     public PatternDiskProviderBlockEntity(BlockPos pos, BlockState blockState) {

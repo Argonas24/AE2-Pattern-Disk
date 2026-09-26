@@ -39,6 +39,7 @@ import appeng.util.SettingsFrom;
 import appeng.util.inv.AppEngInternalInventory;
 import appeng.util.inv.InternalInventoryHost;
 
+import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskProviderBlockEntity;
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskProviderHost;
 import io.github.lounode.ae2pattern.common.logic.PatternDiskProviderLogic;
@@ -79,7 +80,7 @@ public class PatternDiskProviderPart extends AEBasePart
      * terminal must read from the disks, never from the derived inventory the logic fills, or a take
      * would leave the disk untouched.
      */
-    private final PatternDiskTerminalView terminalView = new PatternDiskTerminalView(diskInventory,
+    private final PatternDiskTerminalView terminalView = PatternDiskApi.terminalView(diskInventory,
             () -> getMainNode().getGrid(), this, this::markTerminalChanged, this::getLevel);
 
     protected final PatternProviderLogic logic = createLogic();
