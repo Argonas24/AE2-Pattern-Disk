@@ -86,8 +86,25 @@ final class NeoECOAuxiliaryStore {
             // Asked for by the pattern management screens when a container's recipe is taken back out: the
             // store removes it and settles the cost in one step, which is the only place that can.
             case "remove" -> remove(objectAt(args, 0), intAt(args, 1), itemAt(args, 2));
-            default -> typeDefault(method.getReturnType());
+            default -> unknown(method);
         };
+    }
+
+    /**
+     * A method this integration does not know: the installed NEO ECO is newer than this integration.
+     *
+     * <p>Answering the return type's default keeps the bus running, which is right - but on its own it also
+     * makes a newer NEO ECO look like a working one where some container feature silently does not exist. So
+     * report the first call of each name, the same way a throwing callback is reported.</p>
+     */
+    private static Object unknown(Method method) {
+        if (REPORTED_FAILURES.add("unknown:" + method.getName())) {
+            LOGGER.warn("[AE2-Pattern-Disk] NEO ECO called auxiliary store method {} returning {}, which this "
+                    + "integration does not implement; the installed NEO ECO is likely newer. Answering with "
+                    + "the return type's default so the bus keeps running.",
+                    method.getName(), method.getReturnType().getSimpleName());
+        }
+        return typeDefault(method.getReturnType());
     }
 
     /** @return what NEO ECO should see; anything other than INSERTED falls back to the bus's slots. */

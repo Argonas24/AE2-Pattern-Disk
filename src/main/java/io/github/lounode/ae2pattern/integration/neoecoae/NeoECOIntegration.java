@@ -45,7 +45,12 @@ public class NeoECOIntegration {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("ae2_pattern_disk.integration.neoecoae");
 
-    /** Server-side initialisation, called once NEO ECO has loaded and this mod is present. */
+    /**
+     * Called once NEO ECO has loaded and this mod is present. NEO ECO runs its integration scan from its mod
+     * constructor, which both sides execute, so this fires on the client as well - harmless because all it does
+     * is wire up statics (the store, the disk-host collector, the upload handler), and those are what each side
+     * needs anyway.
+     */
     public void apply() {
         Class<?> busClass = NeoECOBusAccess.findClass(NeoECOBusAccess.BUS_CLASS);
         if (busClass == null) {
