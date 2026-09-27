@@ -177,10 +177,12 @@ dependencies {
 
     // NEO ECO AE Extension: dev reference for the pattern-disk integration (upload-to-ECO button,
     // disk-aware storage, autocrafting from disk-held patterns). Compile and runtime both resolve
-    // libs/neoecoae-21.2.0-beta7.jar, which is NOT tracked in git: build it from
-    // https://github.com/DancingSnow0517/NeoECOAEExtension at v21.1.2 (21.2.0-beta7), then copy
-    // build/libs/neoecoae-<version>.jar into libs/. Note it needs a JDK 21 build - the wrapper is Gradle
-    // 8.12.1, which cannot run under the JDK 25 this machine defaults to.
+    // libs/neoecoae-21.2.0-beta7.jar, which is NOT tracked in git: build it from the fork
+    // https://github.com/xingluo01/NeoECOAEExtension at branch feature/pattern-disk-v21.1.2-merge (the
+    // branch carrying the parallel intake registry), then copy build/libs/neoecoae-<version>.jar into
+    // libs/ under that name - the branch build reports its version as 21.2.0, and the file name is kept
+    // only so the release workflow's fetch step and this comment stay in step. Note it needs a JDK 21
+    // build - the wrapper is Gradle 8.12.1, which cannot run under the JDK 25 this machine defaults to.
     //
     // The jar must be a build carrying ECO's side of this integration: the binary is compiled against
     // "ECOParallelCraftingProviders" (the registry this mod registers the batch assembler with) and against
