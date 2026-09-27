@@ -15,7 +15,7 @@ import appeng.api.stacks.AEKey;
  *
  * <p>默认的按 mod 排序在组内比的是名字的字符串（于是 {@code 16k} 排在 {@code 1k} 前面）；打开附加排序后，
  * 组内先按 {@link SortTiers} 里配置的阶层序（基础 &lt; 高级 &lt; 精英…），同阶再按
- * {@link NaturalOrder} 的数值序，容量与编号才排得对。开关只认本模组自己那两个终端（
+ * {@link NumericSeries} 的数值序（哪类名字进这一层同样在配置里用正则给定），容量与编号才排得对。开关只认本模组自己那两个终端（
  * {@link Provider}），AE2 自己的终端不受影响。</p>
  *
  * <p>状态挂在屏幕上而不是全局静态字段：屏幕关掉即失效，不会把上一个终端的选择留给下一个终端。</p>
@@ -44,7 +44,8 @@ public final class NaturalSort {
      *   <li>mod 分组；</li>
      *   <li>配置里的阶层序（{@link SortTiers}；没配到的排在有阶层的后面）；</li>
      *   <li>去掉数字后的文本分组（{@code 1k存储元件} 与 {@code 4k存储元件} 同组，{@code 1k存储组件} 另一组）；</li>
-     *   <li>组内按名字的数值序（{@code 1k < 4k < 16k < 64k < 256k < 1M}）。</li>
+     *   <li>组内按名字的数值序（{@code 1k < 4k < 16k < 64k < 256k < 1M}；参与这一层的名字由
+     *       {@link NumericSeries} 按配置里的正则筛出）。</li>
      * </ol>
      */
     public static Comparator<AEKey> aeKeysByMod(SortDir dir) {
@@ -59,7 +60,7 @@ public final class NaturalSort {
                 .thenComparingInt(tiers::applyAsInt)
                 .thenComparing(key -> templates.computeIfAbsent(key.getDisplayName().getString(),
                         NaturalOrder::template), String::compareToIgnoreCase)
-                .thenComparing(key -> key.getDisplayName().getString(), NaturalOrder.strings());
+                .thenComparing(key -> key.getDisplayName().getString(), NumericSeries.strings());
         return dir == SortDir.DESCENDING ? ascending.reversed() : ascending;
     }
 
@@ -71,11 +72,12 @@ public final class NaturalSort {
 
     /**
      * 物品名字的两种口径：{@code natural = false} 是 AE2 那套字面序（大小写不敏感），
-     * {@code true} 是数值序。方向由 {@code dir} 决定。
+     * {@code true} 是数值序（先过 {@link NumericSeries} 的名字门槛，参与的名字排在没参与的前面）。
+     * 方向由 {@code dir} 决定。
      */
     public static Comparator<String> names(SortDir dir, boolean natural) {
         Comparator<String> ascending = natural
-                ? NaturalOrder.strings()
+                ? NumericSeries.strings()
                 : String::compareToIgnoreCase;
         return dir == SortDir.DESCENDING ? ascending.reversed() : ascending;
     }

@@ -1,7 +1,5 @@
 package io.github.lounode.ae2pattern.client.sort;
 
-import java.util.Comparator;
-
 /**
  * 名字里带数字时的比较：{@code 1k / 4k / 16k / 64k / 256k / 1M} 与 {@code 4 / 16 / 64 / 256 / 1024 /
  * 16384} 这类名字要按数值比，而按字符串比会把 {@code 16k} 排到 {@code 1k} 前面。
@@ -12,13 +10,7 @@ import java.util.Comparator;
  */
 public final class NaturalOrder {
 
-    private static final Comparator<String> STRINGS = NaturalOrder::compare;
-
     private NaturalOrder() {
-    }
-
-    public static Comparator<String> strings() {
-        return STRINGS;
     }
 
     public static int compare(String left, String right) {

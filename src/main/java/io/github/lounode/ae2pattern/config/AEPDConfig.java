@@ -7,9 +7,9 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 /**
  * 模组配置。
  *
- * <p>目前只有一项，而且是纯客户端视图设置：附加排序的层级表。它只影响客户端怎么给自己的物品网格排序，
- * 不改变任何服务端行为，所以按 {@code CLIENT} 类型注册——服务端不加载这份文件，也不会随网络同步
- * （每个玩家的排序偏好本来就该各管各的）。</p>
+ * <p>两项都是纯客户端视图设置：附加排序的层级词表，以及附加排序最后那层数值序的名字门槛。它们只影响
+ * 客户端怎么给自己的物品网格排序，不改变任何服务端行为，所以按 {@code CLIENT} 类型注册——服务端不加载
+ * 这份文件，也不会随网络同步（每个玩家的排序偏好本来就该各管各的）。</p>
  *
  * <p>文件落在 {@code config/ae2_pattern_disk-client.toml}。改完存档不需要重开，客户端重载配置即生效。</p>
  */
@@ -17,6 +17,7 @@ public final class AEPDConfig {
 
     public static final ModConfigSpec CLIENT_SPEC;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> ADDITIONAL_SORT_TIERS;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> ADDITIONAL_SORT_NUMERIC_REGEX;
 
     /**
      * 默认层级表：一组一个元素，组内按「从低到高」列层级词。
@@ -38,6 +39,14 @@ public final class AEPDConfig {
             // Powah：starter 初级 → basic 基础 → hardened 硬化 → blazing 烈焰
             // → niotic 钻石 → spirited 富生 → nitro 下界 → creative 创造
             "powah:starter,basic,hardened,blazing,niotic,spirited,nitro,creative");
+
+    /**
+     * 默认的数值序门槛：任何名字里带数字的条目都参与组内数值序，与加入这一项之前覆盖的名字集合相同。
+     *
+     * <p>门槛用正则而不是名字清单，是为了让玩家自己收窄范围：比如只放行 {@code [0-9]+[kM]} 这类容量写法，
+     * 免得别的模组里「1 号扳手 / 10 号扳手」也被当成容量来排。</p>
+     */
+    private static final List<String> DEFAULT_NUMERIC_REGEX = List.of("[0-9]");
 
     static {
         var builder = new ModConfigSpec.Builder();
@@ -69,6 +78,42 @@ public final class AEPDConfig {
                 "Sodium's Config API cannot present a list like this one, so it is not used here.");
         ADDITIONAL_SORT_TIERS = builder.defineList(
                 "additional_sort.tiers", DEFAULT_TIERS, () -> "", element -> element instanceof String);
+        builder.comment(
+                "Which names take part in the numeric level of the additional sort - the last level,",
+                "where 1k < 4k < 16k < 64k < 256k < 1M.",
+                "",
+                "How to write one: every element is a Java regular expression (java.util.regex, the same",
+                "flavour mods already use), and it is searched for anywhere inside the item's display",
+                "name - so '[0-9]' means 'the name contains a digit' and does not have to describe the",
+                "whole name. Matching is case-sensitive unless the expression says '(?i)'. A backslash",
+                "must be doubled inside a TOML string ('\\d' becomes '\\\\d'), so prefer escape-free",
+                "classes such as '[0-9]+' where you can.",
+                "",
+                "What the order means: nothing. The elements are not tried in turn and there is no",
+                "'first one wins' - a name takes part as soon as at least one of them matches anywhere,",
+                "and that is all this list decides. Where such a name ends up is then decided by the",
+                "numbers it contains, with a trailing k/M/G/T/P/E counted as a power of 1024 - which is",
+                "why capacity chains like 1k, 4k, 16k, 64k, 256k, 1M come out in the right order.",
+                "",
+                "What NOT taking part means: those names are placed after the ones that take part, and",
+                "among themselves they keep the plain literal order. The two groups stay apart on",
+                "purpose - a comparison whose rule depended on which two names it was handed would not",
+                "be consistent, and the sort would then throw 'Comparison method violates its general",
+                "contract'. (The 'additional_sort.tiers' list above is the opposite case: there the",
+                "listed order is the rule.)",
+                "",
+                "The default '[0-9]' lets every name containing a digit take part - the same set of",
+                "names this level used to cover before it became configurable. Narrow it to keep",
+                "numbers that are not capacities out, e.g. '[0-9]+[kKmM]' for the '1k'/'4k'/'1M' style,",
+                "or '^[0-9]+k' to only take names that start with one; an empty list turns the numeric",
+                "level off altogether.",
+                "",
+                "A malformed expression is skipped on its own - the other elements still apply and the",
+                "sort keeps working. If nothing in the list can be compiled at all, the level is left",
+                "wide open (no filtering) rather than silently turned off.");
+        ADDITIONAL_SORT_NUMERIC_REGEX = builder.defineList(
+                "additional_sort.numeric_regex", DEFAULT_NUMERIC_REGEX, () -> "",
+                element -> element instanceof String);
         CLIENT_SPEC = builder.build();
     }
 

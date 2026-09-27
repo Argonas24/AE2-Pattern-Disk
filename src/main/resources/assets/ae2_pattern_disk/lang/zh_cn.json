@@ -124,8 +124,6 @@
   "gui.ae2_pattern_disk.management_terminal.disk_store.select_first": "先右键选中一张磁盘，再 Shift+左键背包里的样板磁盘（会存进同一台容器）",
   "gui.ae2_pattern_disk.sort.additional.enable": "启用附加排序",
   "gui.ae2_pattern_disk.sort.additional.disable": "关闭附加排序",
-  "gui.ae2_pattern_disk.sort.additional.rule.group": "一级（分组）：去掉数字后名称相同的归为一组，1k ME存储组件与4k ME存储组件同组，1k合成存储器另成一组",
-  "gui.ae2_pattern_disk.sort.additional.rule.numeric": "二级（组内）：按名称里的数值排——1k < 4k < 16k < 64k < 256k < 1M",
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction": "推入方向：%s",
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction.all": "全向",
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction.side": "%s面",

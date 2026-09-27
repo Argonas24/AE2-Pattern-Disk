@@ -67,8 +67,8 @@ public final class NaturalSortButton {
     }
 
     /**
-     * 每帧一次：只在「按 mod」时露面（其它档位下它无从生效），提示语第一行报的是当前状态，
-     * 后两行把两条附加规则各自说清楚——与「隐藏槽位」那几个开关一个口径。
+     * 每帧一次：只在「按 mod」时露面（其它档位下它无从生效），提示语只报当前状态——细致的排序规则不在
+     * 这里展开，要看就去配置文件与指南（与「隐藏槽位」那几个开关一个口径）。
      */
     public void update(SortOrder order) {
         this.button.setVisibility(order == SortOrder.MOD);
@@ -77,9 +77,7 @@ public final class NaturalSortButton {
             this.button.setTooltip(List.of(
                     Component.translatable(this.enabled
                             ? "gui.ae2_pattern_disk.sort.additional.enable"
-                            : "gui.ae2_pattern_disk.sort.additional.disable"),
-                    Component.translatable("gui.ae2_pattern_disk.sort.additional.rule.group"),
-                    Component.translatable("gui.ae2_pattern_disk.sort.additional.rule.numeric")));
+                            : "gui.ae2_pattern_disk.sort.additional.disable")));
         }
     }
 

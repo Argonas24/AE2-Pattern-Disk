@@ -35,12 +35,7 @@ The toggle beside the search bar decides whether unmarked disks appear: off filt
 
 ### Sorting
 
-When the terminal's item grid sorts by mod, an extra "additional sort" toggle appears, on by default, applying three levels in turn:
-
-- First by the **tier** in the name: `Basic Factory < Advanced Factory < Elite Factory < Ultimate Factory`, `Infused Alloy < Reinforced Alloy < Atomic Alloy`. The tier table lives in `config/ae2_pattern_disk-client.toml`; it ships with tiers for Mekanism factories and alloys and for Powah. Names that match none of them skip this level.
-- Then names that match once the numbers are removed share a group: `1k ME Storage Component` and `4k ME Storage Component` together, `1k Crafting Storage` on its own.
-- Within a group the numbers decide the order: `1k < 4k < 16k < 64k < 256k < 1M`, `4 < 16 < 64 < 256 < 1024`, with a trailing k/M/G/T/P/E counted as a power of 1024.
-- Turning it off falls back to AE2's original two levels (mod, then literal name), where `16k` comes before `1k` again.
+When the item grid sorts by mod, an extra "additional sort" toggle appears (on by default): within a mod it looks at the tier word in the name, then groups names that match once the numbers are removed, and orders each group by the numbers in the name - so different capacities of the same series stay next to each other and `16k` no longer comes before `1k`. Both the tier table and which names take part in the numeric level live in `config/ae2_pattern_disk-client.toml` (the file's comments explain the syntax); turning the toggle off falls back to AE2's original two levels (mod, then literal name).
 
 It stays hidden in the other sort modes. The same toggle governs the patterns inside each disk on the management terminal.
 

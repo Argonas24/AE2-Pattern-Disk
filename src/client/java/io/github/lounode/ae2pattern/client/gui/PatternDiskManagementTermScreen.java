@@ -48,6 +48,7 @@ import appeng.core.localization.ButtonToolTips;
 import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.client.sort.NaturalOrder;
 import io.github.lounode.ae2pattern.client.sort.NaturalSort;
+import io.github.lounode.ae2pattern.client.sort.NumericSeries;
 import io.github.lounode.ae2pattern.client.sort.SortTiers;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
@@ -1120,7 +1121,8 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
      * 盘内样板的排序口径。
      *
      * <p>比的是格子里显示的那个名字（样板的主产物），不是样板本体：玩家在格子看到的是产物，按产物排才找得到
-     * 东西。mod 档同理，比的是产物所属的 mod。名字档的两个口径（字面/数值）由「数值排序」开关决定。</p>
+     * 东西。mod 档同理，比的是产物所属的 mod。名字档固定用字面序；「数值排序」开关只作用于按 mod 档
+     * 的组内比较（见 {@link NumericSeries}）。</p>
      */
     private Comparator<ItemStack> patternComparator(SortOrder order, SortDir dir, boolean natural) {
         return switch (order) {
@@ -1133,8 +1135,9 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
 
     /**
      * 按 mod 排：附加排序打开时是四层——mod → 阶层（见 {@link SortTiers}）→ 去掉数字后的文本 → 名字的
-     * 数值序；关掉时退回 AE2 原本的两层（mod → 名字字面序）。第三层才是数大小：先分组再排数，同一系列
-     * （只是容量不同）才会相邻，不会出现「1k存储元件、1k存储组件、4k存储元件」这种把同系列拆散的次序。
+     * 数值序（见 {@link NumericSeries}，只作用于配置里正则命中的名字）；关掉时退回 AE2 原本的两层
+     * （mod → 名字字面序）。第三层才是数大小：先分组再排数，同一系列（只是容量不同）才会相邻，不会出现
+     * 「1k存储元件、1k存储组件、4k存储元件」这种把同系列拆散的次序。
      */
     private Comparator<ItemStack> byModComparator(SortDir dir, boolean additional) {
         Comparator<ItemStack> ascending = Comparator.comparing(displayedItemModId, String::compareToIgnoreCase);
@@ -1146,7 +1149,7 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
                     .thenComparingInt(pattern -> tiers.applyAsInt(displayedItem.apply(pattern)))
                     .thenComparing(stack -> NaturalOrder.template(displayedItemName(stack)),
                             String::compareToIgnoreCase)
-                    .thenComparing(this::displayedItemName, NaturalOrder.strings());
+                    .thenComparing(this::displayedItemName, NumericSeries.strings());
         } else {
             ascending = ascending.thenComparing(this::displayedItemName, String::compareToIgnoreCase);
         }
