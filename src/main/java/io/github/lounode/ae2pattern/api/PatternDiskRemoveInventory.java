@@ -42,6 +42,16 @@ import org.slf4j.LoggerFactory;
  * an empty row and writing into it, and for this provider the disks are the only place such a write can
  * land.</p>
  *
+ * <p><b>Known limitation: the pattern access terminal's region move.</b> Holding space and clicking a row
+ * moves a whole container in one action, and that loop reads every row through {@link #getStackInSlot} while
+ * clearing only the row the player acted on. It is written for rows whose read hands out the live stack; this
+ * view's read hands out a copy and charges nothing, so the action gives away a copy of every row and, in the
+ * same pass, takes the acted-on row out of its disk (drawing a blank pattern for it) without the player
+ * receiving it. It cannot be closed from inside the view: the read has to stay a copy for the display path
+ * that shares it, and answering empty instead either blanks the terminal or triggers that take while the
+ * player receives nothing. Closing it means replacing that loop in the menu with a per-row take. Until then,
+ * taking rows one at a time is the path that pays.</p>
+ *
  * @param diskInventory the provider's disk slot inventory; only {@link IPatternDisk} slots count
  * @param blankPatternSink draws/returns one blank pattern from the ME network; {@code null} refuses extraction
  * @param onChange       invoked after a real mutation so the provider can persist and rebuild the view

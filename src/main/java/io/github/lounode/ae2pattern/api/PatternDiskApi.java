@@ -90,8 +90,11 @@ public final class PatternDiskApi {
      * always refusing.</p>
      *
      * <p>7 added {@link #removeAt}, the removal half of a write, and the same method on {@link IPatternDisk}.</p>
+     *
+     * <p>8 added {@link PatternDiskHostView}, the composition of a host's own rows with its disks' rows, so a
+     * host that keeps both does not have to route between them itself.</p>
      */
-    public static final int API_VERSION = 7;
+    public static final int API_VERSION = 8;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("ae2_pattern_disk.api");
 
