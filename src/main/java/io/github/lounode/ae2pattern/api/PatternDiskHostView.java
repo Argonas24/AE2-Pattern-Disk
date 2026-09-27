@@ -24,15 +24,7 @@ import net.minecraft.world.item.ItemStack;
  * draws a blank pattern from the network, and putting one on draws nothing. Writes aimed at the host's own
  * rows go through the host view as usual.</p>
  *
- * <p><b>Bulk moves.</b> AE2's pattern access terminal can move a whole container's rows into a player's
- * inventory in one action, and that loop reads every row through {@link #getStackInSlot} while clearing only
- * the row the player clicked. A view whose rows are backed by a cost cannot answer that correctly from the
- * inside - the read would have to both hand the item out and charge for it, and the same read is the display
- * path. A host that wants that action to be safe has to keep the disk rows out of whatever it tells AE2 is
- * movable; a host that does not will let the shortcut hand out rows the network was never charged for.
- * Nothing in this api can declare a row unmovable ({@link #isItemValid} and friends are about single rows),
- * so that declaration has to come from the host's own loader - the NEO ECO bus keeps its disk rows out of
- * the movable set through that mod's terminal hook.</p>
+ *
  */
 public final class PatternDiskHostView extends BaseInternalInventory {
 

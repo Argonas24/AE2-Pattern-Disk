@@ -52,6 +52,9 @@ import org.slf4j.LoggerFactory;
  * player receives nothing. Closing it means replacing that loop in the menu with a per-row take. Until then,
  * taking rows one at a time is the path that pays.</p>
  *
+ * <p>The disk rows are shared as they come from {@link PatternDiskTerminalView}, whose cached view is what
+ * makes a row's take cost the same here as it does anywhere else.</p>
+ *
  * @param diskInventory the provider's disk slot inventory; only {@link IPatternDisk} slots count
  * @param blankPatternSink draws/returns one blank pattern from the ME network; {@code null} refuses extraction
  * @param onChange       invoked after a real mutation so the provider can persist and rebuild the view
@@ -138,7 +141,7 @@ public class PatternDiskRemoveInventory implements InternalInventory {
         if (ref == null) {
             return ItemStack.EMPTY;
         }
-        // Return a copy so callers (AE2 MOVE_REGION etc.) can never mutate disk contents in place.
+        // Return a copy so a caller that writes back into what it read can never mutate disk contents in place.
         return getPatternAt(ref).copy();
     }
 
