@@ -1,44 +1,44 @@
 package io.github.lounode.ae2pattern.integration.neoecoae;
 
-import java.lang.reflect.Method;
-import java.util.List;
-
-import appeng.api.networking.IGrid;
-
-import io.github.lounode.ae2pattern.api.IPatternDiskHost;
-import io.github.lounode.ae2pattern.api.PatternDiskApi;
-import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import cn.dancingsnow.neoecoae.api.integration.Integration;
+import cn.dancingsnow.neoecoae.api.me.provider.ECOParallelCraftingProviders;
+
+import io.github.lounode.ae2pattern.common.block.entity.BatchAssemblerBlockEntity;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 
 /**
  * Integration entry point for NEO ECO AE Extension ({@code neoecoae}).
  *
  * <p>NEO ECO's {@code IntegrationManager} discovers this class at startup through
- * {@code @Integration("ae2_pattern_disk")} and calls {@link #apply()} server-side. The class stays a thin
- * assembler: it resolves the bus, checks that the auxiliary pattern store API is present, and hands the
- * work to the neighbouring classes. {@link NeoECOBusAccess} holds the reflection boundary,
- * {@link NeoECOBusDisks} the disk operations, {@link NeoECOAuxiliaryStore} the store NEO ECO calls back
- * into.</p>
+ * {@code @Integration("ae2_pattern_disk")} and calls {@link #apply()}. Each feature below is asked for
+ * separately, with its own guard: an older NEO ECO is missing some of what is wanted here, and is not
+ * missing all of it, so one absent piece must not silently take the others down with it.</p>
  *
- * <h2>What the bus does with the store</h2>
+ * <h2>The parallel intake contract</h2>
  *
- * <ul>
- *   <li>recognises pattern disks in its slot filter, so they can be placed into a bus at all;</li>
- *   <li>routes an uploaded pattern to a disk ahead of its slot inventory, and keeps a bus whose slots
- *       are all full in the network's writable set while a disk still has room;</li>
- *   <li>advertises the patterns held on disks to autocrafting, alongside the slot-held ones;</li>
- *   <li>counts them in the network-wide pattern index, so an upload of a pattern that already sits on a
- *       disk is recognised instead of duplicated, and keeps them out of the slot index, where one disk
- *       would otherwise look like one unsupported pattern.</li>
- * </ul>
+ * <p>NEO ECO's CPU hands a provider that answers its parallel contract a whole batch instead of one craft at
+ * a time, and the batch assembler can honour that. It must not name the ECO type itself - NEO ECO is an
+ * optional dependency - so it is registered here, keyed by its class, and the contract is reached through
+ * {@link BatchAssemblerParallelIntake}. This replaces a mixin that added the interface to the machine
+ * directly: that reached the same lookup, but only by touching the machine's class, which then depended on
+ * when and whether the mixin was applied. A registration is the same lookup without the class surgery.</p>
  *
- * <p>This targets the NEO ECO {@code v21.1.2} line, whose bus exposes
- * {@code setAuxiliaryPatternStore} and {@code getTerminalPatternInventory}. On an older build every
- * lookup fails and the integration logs why it stood down; the rest of the mod is unaffected.</p>
+ * <h2>The encoding terminal's upload button</h2>
+ *
+ * <p>NEO ECO's pattern storage reports how an upload ended, which is what lets that button tell "a disk took
+ * it" from "nothing happened". Without the report an answer could only be guessed, and a wrong guess hands a
+ * blank pattern back for one that was merely moved. So the button stays off when the report is absent -
+ * the same rule as before, now checked on its own rather than behind another feature's guard.</p>
+ *
+ * <h2>What is deliberately absent</h2>
+ *
+ * <p>The disk side is not wired here. NEO ECO compiles against this mod's {@code PatternDiskApi} and
+ * registers its own disk holders and terminal views, so the reflection this class used to carry - the bus
+ * accessor, the auxiliary store it called back into, the terminal hook - has been deleted along with the
+ * store the bus used to look for.</p>
  */
 @Integration("ae2_pattern_disk")
 public class NeoECOIntegration {
@@ -46,131 +46,74 @@ public class NeoECOIntegration {
     private static final Logger LOGGER = LoggerFactory.getLogger("ae2_pattern_disk.integration.neoecoae");
 
     /**
-     * Called once NEO ECO has loaded and this mod is present. NEO ECO runs its integration scan from its mod
-     * constructor, which both sides execute, so this fires on the client as well - harmless because all it does
-     * is wire up statics (the store, the disk-host collector, the upload handler), and those are what each side
-     * needs anyway.
+     * Called once NEO ECO has loaded and this mod is present.
+     *
+     * <p>Each feature is wired on its own and wrapped on its own, because this runs inside NEO ECO's mod
+     * constructor: a throw from here is not a lost feature but a failed game start.</p>
      */
     public void apply() {
-        Class<?> busClass = NeoECOBusAccess.findClass(NeoECOBusAccess.BUS_CLASS);
-        if (busClass == null) {
-            LOGGER.info("[AE2-Pattern-Disk] Neo ECO FD Smart Pattern Bus not present; integration skipped");
-            return;
-        }
-
-        Class<?> storeInterface = NeoECOBusAccess.findClass(NeoECOBusAccess.AUXILIARY_STORE_CLASS);
-        if (storeInterface == null) {
-            LOGGER.warn("[AE2-Pattern-Disk] NEO ECO has no AuxiliaryPatternStore API, so pattern disks "
-                    + "cannot be served by the FD Smart Pattern Bus; integration skipped");
-            return;
-        }
-
-        Method setStore = NeoECOBusAccess.method(busClass, "setAuxiliaryPatternStore", storeInterface);
-        if (setStore == null) {
-            LOGGER.warn("[AE2-Pattern-Disk] FD Smart Pattern Bus lacks setAuxiliaryPatternStore; integration skipped");
-            return;
-        }
-
-        Method getPatternInventory = NeoECOBusAccess.method(busClass, "getPatternSlotInventory");
-        if (getPatternInventory == null) {
-            // Older builds exposed the raw slots under the terminal's method name. The two were split so the
-            // terminal's display view - which hides disks and appends their recipes - could stop being the
-            // thing the disk scan and the slot accessors read.
-            getPatternInventory = NeoECOBusAccess.method(busClass, "getTerminalPatternInventory");
-        }
-        Method getLevel = NeoECOBusAccess.method(busClass, "getLevel");
-        if (getPatternInventory == null || getLevel == null) {
-            LOGGER.warn("[AE2-Pattern-Disk] FD Smart Pattern Bus lacks getPatternSlotInventory/getLevel; "
-                    + "integration skipped");
-            return;
-        }
-
-        var handles = new NeoECOBusAccess.BusHandles(getPatternInventory, getLevel);
-        Object store = NeoECOAuxiliaryStore.create(storeInterface, handles);
-        if (store == null) {
-            LOGGER.warn("[AE2-Pattern-Disk] NEO ECO pattern-insertion results are unusable; integration skipped");
-            return;
-        }
-
-        try {
-            setStore.invoke(null, store);
-            LOGGER.info("[AE2-Pattern-Disk] Registered the auxiliary pattern store "
-                    + "(pattern disks served by the FD Smart Pattern Bus)");
-        } catch (ReflectiveOperationException e) {
-            LOGGER.warn("[AE2-Pattern-Disk] auxiliary pattern store could not be registered", e);
-        }
-
-        // The disks also have to reach the encoding terminal. That terminal discovers disk slots by
-        // scanning grid machines for IPatternDiskHost, which a machine from another mod cannot implement,
-        // so the bus has to be handed over through the registry instead.
-        PatternDiskApi.registerDiskHost(grid -> hostsOn(grid, busClass, handles));
-        LOGGER.info("[AE2-Pattern-Disk] FD Smart Pattern Bus disks are now listed in the encoding terminal");
-
-        // And the pattern access terminal gets a view of the bus in which the disks' recipes can be taken,
-        // rather than the bus's own view in which they are only listed. Without this the listing is accurate
-        // but inert: a recipe could be read off the terminal and not taken out of the disk it came from.
-        registerTerminalView(busClass, handles);
-
-        // Upload button for the encoding terminal: wire up the pattern-storage upload so that clicking the
-        // NEO ECO button in the terminal screen calls into the disk's storage service. The client decides
-        // whether to draw the button by the same capability, so the two cannot disagree.
-        if (NeoECOUploadHandler.reportingApiPresent()) {
-            PatternDiskEncodingTermMenu.uploadHandler = NeoECOUploadHandler.create();
-            LOGGER.info("[AE2-Pattern-Disk] Encoding terminal upload button wired");
+        guarded("the encoding terminal upload", NeoECOIntegration::wireEncodingTerminalUpload);
+        // Asked for by name, never by type: this class is loaded by NEO ECO builds that predate the registry
+        // too, and naming the type would fail this class's own load - inside that mod's constructor, which
+        // takes the game down with it. The reference inside registerParallelIntake is only resolved when it
+        // is called, so not calling it is enough.
+        if (classPresent(NeoECOTypes.PARALLEL_REGISTRY)) {
+            guarded("the parallel intake registration", NeoECOIntegration::registerParallelIntake);
         } else {
-            // Without the reporting entry an upload can only guess whether a container ate the pattern or a
-            // slot merely took it in, and the wrong guess hands a blank back for a pattern that was only
-            // moved - a dupe. Offer no button rather than one that can mint patterns.
-            LOGGER.warn("[AE2-Pattern-Disk] NEO ECO has no insertPreparedPatternReporting, so the encoding "
-                    + "terminal upload button stays off");
+            LOGGER.info("[AE2-Pattern-Disk] NEO ECO has no parallel intake registry, so the batch assembler "
+                    + "keeps AE2's one-craft push path");
+        }
+    }
+
+    /** Runs one wiring step, keeping a failure inside it from reaching the mod loader. */
+    private static void guarded(String what, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException broken) {
+            LOGGER.warn("[AE2-Pattern-Disk] {} could not be wired; that feature stays off", what, broken);
         }
     }
 
     /**
-     * Hands the bus a terminal view that serves its disks, when the bus build offers the hook for it.
-     *
-     * <p>Missing the hook is not an error: the bus then keeps describing the disks itself, which loses the
-     * interaction and nothing else.</p>
+     * @return whether {@code name} is loadable; {@code initialize=false} so only its presence is asked, and
+     *         nothing of NEO ECO's is initialised early
      */
-    private static void registerTerminalView(Class<?> busClass, NeoECOBusAccess.BusHandles handles) {
-        Class<?> hookInterface = NeoECOBusAccess.findClass(busClass.getName() + "$TerminalInventoryHook");
-        Method setHook = hookInterface == null ? null
-                : NeoECOBusAccess.method(busClass, "setTerminalInventoryHook", hookInterface);
-        if (hookInterface == null || setHook == null) {
-            LOGGER.info("[AE2-Pattern-Disk] FD Smart Pattern Bus has no terminal view hook; the disks' recipes "
-                    + "stay listed but cannot be taken");
-            return;
-        }
-        Object handler = NeoECOBusTerminalHook.create(hookInterface, handles);
-        if (handler == null) {
-            LOGGER.warn("[AE2-Pattern-Disk] terminal view hook could not be built; disks' recipes stay listed "
-                    + "but cannot be taken");
-            return;
-        }
+    private static boolean classPresent(String name) {
         try {
-            setHook.invoke(null, handler);
-            LOGGER.info("[AE2-Pattern-Disk] FD Smart Pattern Bus terminal view now serves the disks "
-                    + "(taking a recipe draws a blank pattern from the network)");
-        } catch (ReflectiveOperationException e) {
-            LOGGER.warn("[AE2-Pattern-Disk] terminal view hook could not be registered", e);
+            Class.forName(name, false, NeoECOIntegration.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | NoClassDefFoundError absent) {
+            return false;
+        } catch (LinkageError broken) {
+            // Present but unlinkable is a broken build rather than an older one, so it is worth a reason.
+            LOGGER.warn("[AE2-Pattern-Disk] NEO ECO class {} could not be linked", name, broken);
+            return false;
         }
     }
 
-    /** @return every FD Smart Pattern Bus on {@code grid}, presented as a disk host. */
-    private static List<IPatternDiskHost> hostsOn(IGrid grid, Class<?> busClass,
-            NeoECOBusAccess.BusHandles handles) {
-        var hosts = new java.util.ArrayList<IPatternDiskHost>();
-        for (var machineClass : grid.getMachineClasses()) {
-            if (machineClass == null || !machineClass.isAssignableFrom(busClass)) {
-                continue;
-            }
-            for (var machine : grid.getActiveMachines(machineClass)) {
-                if (busClass.isInstance(machine)) {
-                    hosts.add(new NeoECODiskHost(machine, handles));
-                }
-            }
+    /**
+     * Hands NEO ECO the batch assembler's parallel intake.
+     *
+     * <p>Keyed by class rather than by instance: providers are looked up while a crafting job runs, so the
+     * registration has to answer for machines that are created later.</p>
+     */
+    private static void registerParallelIntake() {
+        ECOParallelCraftingProviders.register(BatchAssemblerBlockEntity.class,
+                provider -> new BatchAssemblerParallelIntake((BatchAssemblerBlockEntity) provider));
+        LOGGER.info("[AE2-Pattern-Disk] Batch assembler registered for NEO ECO parallel intake");
+    }
+
+    private static void wireEncodingTerminalUpload() {
+        if (!NeoECOUploadHandler.reportingApiPresent()) {
+            // Without the reporting entry an upload can only guess whether a container ate the pattern or a
+            // slot merely took it in, and the wrong guess hands a blank back for a pattern that was only
+            // moved - a dupe. Offer no button rather than one that can mint patterns.
+            LOGGER.warn("[AE2-Pattern-Disk] NEO ECO has no pattern-insertion reporting, so the encoding "
+                    + "terminal upload button stays off");
+            return;
         }
-        return hosts;
+        PatternDiskEncodingTermMenu.uploadHandler = NeoECOUploadHandler.create();
+        LOGGER.info("[AE2-Pattern-Disk] Encoding terminal upload button wired");
     }
 
     /** Client-side initialisation: the terminal screen adds its upload button on its own. */

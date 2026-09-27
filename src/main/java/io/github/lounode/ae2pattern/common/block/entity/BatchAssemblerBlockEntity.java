@@ -627,9 +627,10 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
     }
 
     // ---- parallel intake (NEO ECO) -------------------------------------------
-    // The ECO interface itself is injected by BatchAssemblerEcoParallelMixin, so this class stays free of
-    // ECO types: in a pack without ECO that mixin is never applied, and the two methods below are just the
-    // machine's own bookkeeping entry points.
+    // The ECO interface is not on this class: it is supplied by the registration NEO ECO's integration entry
+    // point makes ({@code io.github.lounode.ae2pattern.integration.neoecoae.BatchAssemblerParallelIntake}),
+    // which is what keeps this class free of ECO types - in a pack without ECO nothing is registered, and the
+    // two methods below are just the machine's own bookkeeping entry points.
 
     /**
      * Room one type entry takes on a cell, expressed in items, for the cell holding {@code stack}.

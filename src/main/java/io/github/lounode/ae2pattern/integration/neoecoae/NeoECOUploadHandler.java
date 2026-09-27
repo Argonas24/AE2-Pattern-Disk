@@ -47,8 +47,15 @@ final class NeoECOUploadHandler {
                     broken);
             return false;
         }
-        // 缺这个常量时上传记账的分支无从判起，当作这套接口不完整。
-        return NeoECOBusAccess.insertionResult(NeoECOTypes.ALREADY_PRESENT_CONSTANT) != null;
+        // 缺这个常量时上传记账的分支无从判起，当作这套接口不完整。按名字问，而不是直接引用：直接引用会在旧
+        // 构建上抛 NoSuchFieldError，而这里要的是一个可处理的「不完整」答案。
+        try {
+            Class.forName(NeoECOTypes.INSERTION_RESULT)
+                    .getField(NeoECOTypes.ALREADY_PRESENT_CONSTANT);
+            return true;
+        } catch (ClassNotFoundException | NoSuchFieldException absent) {
+            return false;
+        }
     }
 
     /**

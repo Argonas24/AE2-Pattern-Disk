@@ -52,9 +52,10 @@ public final class NeoECOClientIntegration {
      * <p>名字一律取 {@link NeoECOTypes} 的字面串：直接引用这些类型，没装 ECO 的客户端会崩在类加载。</p>
      */
     public static boolean hasUploadTarget() {
+        // The bus is deliberately not part of this: an upload now lands on any host NEO ECO keeps patterns for,
+        // and the bus is one of them rather than the only one. The auxiliary store that used to carry the
+        // upload is gone from NEO ECO entirely.
         return isLoaded()
-                && classPresent(NeoECOTypes.BUS)
-                && classPresent(NeoECOTypes.AUXILIARY_STORE)
                 && classPresent(NeoECOTypes.PREPARED_PATTERN)
                 && classPresent(NeoECOTypes.UPLOAD_BUTTON)
                 && uploadEntriesPresent();

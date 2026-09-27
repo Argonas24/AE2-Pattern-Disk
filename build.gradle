@@ -182,12 +182,16 @@ dependencies {
     // build/libs/neoecoae-<version>.jar into libs/. Note it needs a JDK 21 build - the wrapper is Gradle
     // 8.12.1, which cannot run under the JDK 25 this machine defaults to.
     //
-    // Every API this integration talks to (AuxiliaryPatternStore, the reporting upload, the terminal view
-    // hook) is upstream as of 21.2.0-beta7, so a stock build carries it and no fork jar is needed any
-    // more: it was developed against a fork while
-    // https://github.com/DancingSnow0517/NeoECOAEExtension/pull/101 was open. The integration still
-    // stays inert when the auxiliary-pattern-store API is absent, so the mod also runs against older
-    // NEO ECO builds.
+    // The jar must be a build carrying ECO's side of this integration: the binary is compiled against
+    // "ECOParallelCraftingProviders" (the registry this mod registers the batch assembler with) and against
+    // the reporting upload, and the disk side is served by ECO itself, which compiles against this mod's
+    // PatternDiskApi. A stock release up to and including 21.2.0-beta7 predates all of that - the local jar
+    // therefore has to come from the NEO ECO branch that adds it, not from that tag.
+    //
+    // At runtime an older NEO ECO is not an error: every feature this integration asks for is guarded on
+    // its own, so a build missing one simply does not get that feature. Keep it that way - naming a type
+    // from a newer ECO outside such a guard fails this mod's startup, and one absent feature would then
+    // take the others, and the game, with it.
     compileOnly files('libs/neoecoae-21.2.0-beta7.jar')
     clientCompileOnly files('libs/neoecoae-21.2.0-beta7.jar')
 
