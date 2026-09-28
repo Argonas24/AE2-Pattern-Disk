@@ -6,6 +6,7 @@ import net.minecraft.world.entity.player.Inventory;
 import appeng.client.gui.style.ScreenStyle;
 
 import de.mari_023.ae2wtlib.api.gui.ScrollingUpgradesPanel;
+import de.mari_023.ae2wtlib.api.terminal.ItemWUT;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
@@ -25,18 +26,35 @@ public class PatternDiskWirelessEncodingTermScreen extends PatternDiskEncodingTe
     /** 升级卡面板：留给 {@code init()} 之后按可见行数回写行数（与 AE2WTLib 自己的无线终端同口径）。 */
     private ScrollingUpgradesPanel upgradesPanel;
 
+    /** 通用终端里的切换按钮：构造器里挂上，{@code init()} 里再排到模式按钮之后。 */
+    private de.mari_023.ae2wtlib.api.gui.IconButton terminalSwitchButton;
+
     public PatternDiskWirelessEncodingTermScreen(PatternDiskWirelessEncodingTermMenu menu,
             Inventory playerInventory, Component title, ScreenStyle style) {
         super(menu, playerInventory, title, style);
+        // 终端切换按钮：挂在构造器里，与 AE2WTLib 自己的无线终端同一时机（addToLeftToolbar 依赖的
+        // widgets 这时已就绪）；放进 init() 不生效，还会随每次 resize 反复追加。
+        // 只在通用终端里打开时才有得切，判据照 wtlib：宿主物品是不是通用终端。
+        if (menu.getTerminalHost().getItemStack().getItem() instanceof ItemWUT) {
+            this.terminalSwitchButton = cycleTerminalButton();
+            addToLeftToolbar(this.terminalSwitchButton);
+        }
     }
 
     @Override
     public void init() {
-        addToLeftToolbar(cycleTerminalButton());
-        this.upgradesPanel = addUpgradePanel(widgets, getMenu());
+        // 与父屏同一处理：upgradesPanel 只在首次开屏时建，否则 resize 触发的第二次 init 会重复注册
+        // 同名滚动条（upgradeScrollbar）而抛 Duplicate id。
+        if (this.upgradesPanel == null) {
+            this.upgradesPanel = addUpgradePanel(widgets, getMenu());
+        }
         super.init();
         // 行数按屏幕实际能放下多少收：不写这一句就恒为默认的 2 行，高屏会白白空着。
         this.upgradesPanel.setMaxRows(Math.max(2, getVisibleRows()));
+        // 切换按钮排在「编码类型」之后：工具栏默认按挂载顺序摆，而本按钮是构造器里挂的，会跑到模式按钮前面。
+        if (this.terminalSwitchButton != null) {
+            ToolbarOrder.placeAfter(this, this.terminalSwitchButton, this.modeCycleButton);
+        }
     }
 
     @Override

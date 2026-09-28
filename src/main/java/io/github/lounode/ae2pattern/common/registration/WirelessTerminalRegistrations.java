@@ -1,0 +1,103 @@
+package io.github.lounode.ae2pattern.common.registration;
+
+import java.util.Map;
+import java.util.function.Supplier;
+
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+
+import de.mari_023.ae2wtlib.api.gui.Icon;
+import de.mari_023.ae2wtlib.api.registration.AddTerminalEvent;
+
+import io.github.lounode.ae2pattern.common.item.WirelessPatternDiskTerminalItem;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessManagementTermMenu;
+import io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost;
+
+/**
+ * 两个无线终端在 AE2WTLib 那边的整套登记：终端名、宿主工厂、菜单类型、物品、图标，以及升级卡的补挂。
+ *
+ * <p>从 {@code AEPatternRegistries} 抽出来，与 {@code MeteoritePatternProviderRegistrations}
+ * 同一个口径——一台设备的登记集中在自己的类里，注册中心只留注册表字段与 {@code register} 的编排。</p>
+ *
+ * <p><b>时机是这里唯一的坑</b>：{@link AddTerminalEvent#register} 的回调由 AE2WTLib 在 ITEM 的
+ * {@code RegisterEvent} 里执行。那一刻注册表已开放、物品工厂能返回实例，但 {@code DeferredHolder}
+ * 尚未绑定——所以回调里只能走 {@link io.github.lounode.ae2pattern.AEPatternRegistries#wirelessEncodingItem()}
+ * 这类工厂，写 {@code ITEM_....get()} 会抛 unbound 的 NPE（本项目在模组构造期栽过一次）。</p>
+ */
+public final class WirelessTerminalRegistrations {
+
+    /**
+     * 图标取自 {@code states.png} 的 y=64 那一行：左侧 (0,64) 是编码终端，右侧 (16,64) 是管理终端，
+     * 两格各 16&times;16。之前用的是 AE2WTLib 自带的样板图标，玩家分不清哪个才是本模组的终端。
+     */
+    private static final Icon ICON_ENCODING = wirelessIcon(0);
+    private static final Icon ICON_MANAGEMENT = wirelessIcon(16);
+
+    private static Icon wirelessIcon(int x) {
+        return new Icon(x, 64, 16, 16,
+                new Icon.Texture(
+                        ResourceLocation.parse("ae2_pattern_disk:textures/guis/states.png"),
+                        256, 256));
+    }
+
+    private WirelessTerminalRegistrations() {}
+
+    /**
+     * 把两个无线终端登记进 AE2WTLib，并在登记完成后补挂升级卡。
+     *
+     * <p><b>两个参数必须是 Supplier，不能收现成的实例</b>：本方法的调用点在模组构造期
+     * （{@code AEPatternRegistries.register}），而物品构造器要往注册表写 intrusive holder——那只允许在
+     * 注册表「正在注册」时进行，构造期注册表已经冻结，此时 {@code new} 会抛
+     * {@code IllegalStateException: Registry is already frozen}。传 Supplier 之后，物品要等
+     * {@link AddTerminalEvent#register} 的回调（由 AE2WTLib 在 ITEM 的 RegisterEvent 里执行）才被造出来，
+     * 那一刻注册表是开放的。</p>
+     */
+    public static void register(Supplier<WirelessPatternDiskTerminalItem> encoding,
+            Supplier<WirelessPatternDiskTerminalItem> management) {
+        AddTerminalEvent.register(event -> {
+            // 到这里才构造物品：回调跑在 ITEM 的 RegisterEvent 里，注册表开放，工厂返回的与注册进去的是同一个。
+            var encodingItem = encoding.get();
+            var managementItem = management.get();
+            // 终端名（name）不带 _terminal 后缀：AE2WTLib 会把热键名拼成 "wireless_" + name + "_terminal"，
+            // 组件名拼成 "has_" + name + "_terminal"（上游自己的 name 就是 pattern_encoding 这种写法）。
+            // 带上后缀会拼出 wireless_pattern_disk_encoding_terminal_terminal，热键翻译键也对不上。
+            //
+            // upgradeCount 是升级槽位数。AE2WTLib 的默认值也是 2，这里仍显式写出：它决定 UpgradeHelper
+            // 给「所有终端」挂卡时的上限（取 Math.min(卡自己的 max, 槽位数)），显式声明后上游改默认值时
+            // 本模组的槽位数不会跟着漂。2 个槽够放量子桥 1 与磁卡 1。
+            event.builder("pattern_disk_encoding",
+                    WirelessPatternDiskTerminalHost::new,
+                    PatternDiskWirelessEncodingTermMenu.TYPE,
+                    encodingItem,
+                    ICON_ENCODING)
+                    .upgradeCount(2)
+                    .addTerminal();
+            event.builder("pattern_disk_management",
+                    WirelessPatternDiskTerminalHost::new,
+                    PatternDiskWirelessManagementTermMenu.TYPE,
+                    managementItem,
+                    ICON_MANAGEMENT)
+                    .upgradeCount(2)
+                    .addTerminal();
+
+            // 补挂量子桥卡与磁铁卡：UpgradeHelper.addUpgrades() 是一次性遍历 WTDefinition 完成的，
+            // 而它跑在本模组登记之前，所以这两个终端拿不到它统一挂的卡。
+            addUpgradeCards(encodingItem, managementItem);
+        });
+    }
+
+    /** 给两个无线终端补挂量子桥卡与磁铁卡（各 1 张）。 */
+    private static void addUpgradeCards(WirelessPatternDiskTerminalItem encodingItem,
+            WirelessPatternDiskTerminalItem managementItem) {
+        for (var entry : Map.of("ae2wtlib:quantum_bridge_card", 1, "ae2wtlib:magnet_card", 1).entrySet()) {
+            var card = BuiltInRegistries.ITEM.get(ResourceLocation.parse(entry.getKey()));
+            if (card == null) {
+                continue;
+            }
+            // 管理终端的磁铁卡不用在这里区分，物品侧的 ExcludedUpgradeInventory 会剔掉它。
+            appeng.api.upgrades.Upgrades.add(card, encodingItem, entry.getValue());
+            appeng.api.upgrades.Upgrades.add(card, managementItem, entry.getValue());
+        }
+    }
+}

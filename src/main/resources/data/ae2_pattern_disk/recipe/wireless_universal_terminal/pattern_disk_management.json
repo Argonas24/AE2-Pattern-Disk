@@ -1,0 +1,7 @@
+{
+  "type": "ae2wtlib:upgrade",
+  "terminal": {
+    "item": "ae2_pattern_disk:wireless_pattern_disk_management_terminal"
+  },
+  "terminalName": "pattern_disk_management"
+}

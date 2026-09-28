@@ -222,8 +222,29 @@ public class AE2PatternDisk {
     }
 
     private void registerUpgrades() {
+        // 无线接入点的「终端绑定槽」按 GridLinkables 注册表决定收不收：AE2 自己只登记了它的两个无线终端
+        // （InitGridLinkables），第三方终端必须在自己的初始化里登记，否则放进接入点会被拒收。
+        // LINKABLE_HANDLER 是 AE2 给无线终端用的现成 handler，可直接复用。
+        appeng.api.features.GridLinkables.register(
+                AEPatternRegistries.ITEM_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL.get(),
+                appeng.items.tools.powered.WirelessTerminalItem.LINKABLE_HANDLER);
+        appeng.api.features.GridLinkables.register(
+                AEPatternRegistries.ITEM_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL.get(),
+                appeng.items.tools.powered.WirelessTerminalItem.LINKABLE_HANDLER);
+
         var machine = net.minecraft.core.registries.BuiltInRegistries.BLOCK
                 .get(net.minecraft.resources.ResourceLocation.parse("ae2_pattern_disk:pattern_transferer"));
+
+        // 无线信号增幅器**不登记**：它管的是无线访问点的信号范围，放进终端的升级槽没有意义
+        // （AE2WTLib 也没给自家终端挂它，同一个理由）。
+
+        // 能源卡：AE2WTLib 的 UpgradeHelper 给所有无线终端加的是「能源卡上限 0」——等于默认不支持，
+        // 要用它得自己登记上限。2 与 AE2 自家的无线终端一致。
+        appeng.api.upgrades.Upgrades.add(appeng.core.definitions.AEItems.ENERGY_CARD,
+                AEPatternRegistries.ITEM_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL.get(), 2);
+        appeng.api.upgrades.Upgrades.add(appeng.core.definitions.AEItems.ENERGY_CARD,
+                AEPatternRegistries.ITEM_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL.get(), 2);
+
         var speedCard = net.minecraft.core.registries.BuiltInRegistries.ITEM
                 .get(net.minecraft.resources.ResourceLocation.parse("ae2:speed_card"));
         if (machine != null && speedCard != null) {

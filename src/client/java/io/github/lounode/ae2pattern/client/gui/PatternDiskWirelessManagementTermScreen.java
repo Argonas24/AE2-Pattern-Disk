@@ -6,6 +6,7 @@ import net.minecraft.world.entity.player.Inventory;
 import appeng.client.gui.style.ScreenStyle;
 
 import de.mari_023.ae2wtlib.api.gui.ScrollingUpgradesPanel;
+import de.mari_023.ae2wtlib.api.terminal.ItemWUT;
 import de.mari_023.ae2wtlib.api.terminal.IUniversalTerminalCapable;
 import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
 
@@ -24,14 +25,26 @@ public class PatternDiskWirelessManagementTermScreen extends PatternDiskManageme
     public PatternDiskWirelessManagementTermScreen(PatternDiskWirelessManagementTermMenu menu,
             Inventory playerInventory, Component title, ScreenStyle style) {
         super(menu, playerInventory, title, style);
+        // 同无线编码终端：切换按钮在构造器里挂（与 AE2WTLib 自己的无线终端同一时机）。
+        if (menu.getTerminalHost().getItemStack().getItem() instanceof ItemWUT) {
+            addToLeftToolbar(cycleTerminalButton());
+        }
     }
 
     @Override
     public void init() {
-        addToLeftToolbar(cycleTerminalButton());
-        this.upgradesPanel = addUpgradePanel(widgets, getMenu());
+        // init() 在窗口 resize（rebuildWidgets）时会被重复调用，而 addUpgradePanel 会往同一个
+        // WidgetContainer 里注册名为 upgradeScrollbar 的滚动条——第二次注册直接抛
+        // IllegalStateException: Duplicate id。所以面板只在首次开屏时建，之后只更新行数。
+        if (this.upgradesPanel == null) {
+            this.upgradesPanel = addUpgradePanel(widgets, getMenu());
+        }
         super.init();
         this.upgradesPanel.setMaxRows(Math.max(2, getVisibleRows()));
+        // 升级卡槽比默认位置左移 1px（纯视觉微调）。面板位置由 wtlib 的 addUpgradePanel 摆好后，
+        // 这里以当前 bounds 为准做相对偏移，不写死坐标，上游改布局也不会打偏。
+        var upgradeBounds = this.upgradesPanel.getBounds();
+        this.upgradesPanel.setPosition(new appeng.client.Point(upgradeBounds.getX() - 1, upgradeBounds.getY()));
     }
 
     @Override

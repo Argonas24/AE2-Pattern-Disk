@@ -17,7 +17,12 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
+import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.neoforged.neoforge.registries.DeferredRegister;
+
+import io.github.lounode.ae2pattern.common.recipe.ClearDiskMarkRecipe;
 
 import appeng.items.parts.PartItem;
 
@@ -137,14 +142,16 @@ public final class AEPatternRegistries {
 
     public static WirelessPatternDiskTerminalItem wirelessEncodingItem() {
         if (wirelessEncodingItem == null) {
-            wirelessEncodingItem = new WirelessPatternDiskTerminalItem(PatternDiskWirelessEncodingTermMenu.TYPE);
+            wirelessEncodingItem = new WirelessPatternDiskTerminalItem(PatternDiskWirelessEncodingTermMenu.TYPE,
+                    "item.ae2_pattern_disk.wireless_pattern_disk_encoding_terminal");
         }
         return wirelessEncodingItem;
     }
 
     public static WirelessPatternDiskTerminalItem wirelessManagementItem() {
         if (wirelessManagementItem == null) {
-            wirelessManagementItem = new WirelessPatternDiskTerminalItem(PatternDiskWirelessManagementTermMenu.TYPE);
+            wirelessManagementItem = new WirelessPatternDiskTerminalItem(PatternDiskWirelessManagementTermMenu.TYPE,
+                    "item.ae2_pattern_disk.wireless_pattern_disk_management_terminal");
         }
         return wirelessManagementItem;
     }
@@ -303,6 +310,14 @@ public final class AEPatternRegistries {
 
     // ---- Creative tab --------------------------------------------------------
 
+    /** 配方序列化器：目前只有洗标记这一个（见 ClearDiskMarkRecipe）。 */
+    public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS = DeferredRegister
+            .create(Registries.RECIPE_SERIALIZER, AE2PatternDisk.MOD_ID);
+
+    /** 洗掉样板磁盘标记的配方。 */
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<ClearDiskMarkRecipe>> CLEAR_DISK_MARK = RECIPE_SERIALIZERS
+            .register("clear_disk_mark", () -> new SimpleCraftingRecipeSerializer<>(ClearDiskMarkRecipe::new));
+
     public static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(
             Registries.CREATIVE_MODE_TAB, AE2PatternDisk.MOD_ID);
 
@@ -390,35 +405,18 @@ public final class AEPatternRegistries {
         MENUS.register(modBus);
         COMPONENTS.register(modBus);
         TABS.register(modBus);
+        RECIPE_SERIALIZERS.register(modBus);
 
-        registerWirelessTerminals();
+        // 传方法引用而不是调用结果：物品要等登记回调触发时才构造——物品构造器会往注册表写 intrusive
+        // holder，那只允许在注册表「正在注册」时进行，而这里的调用点在模组构造期（注册表已冻结，
+        // 立刻 new 会抛 IllegalStateException: Registry is already frozen）。
+        io.github.lounode.ae2pattern.common.registration.WirelessTerminalRegistrations.register(
+                AEPatternRegistries::wirelessEncodingItem, AEPatternRegistries::wirelessManagementItem);
 
         // The api resolves the component through the holder, so it is handed the holder itself - a
         // DeferredHolder is not populated until the registry events run, and reads happen after that.
         PatternDiskApi.bindDiskContentsComponent(DISK_CONTENTS);
 
         PatternDiskApi.setExternalUploadPolicy(ExtendedAEPlusCompat.asUploadPolicy());
-    }
-
-    /**
-     * 把两个无线终端登记进 AE2WTLib：终端名、宿主工厂、菜单类型、物品、图标。这个回调由 AE2WTLib 在 ITEM
-     * 的 RegisterEvent 里执行（那时注册表开放，物品实例才能造出来，见 {@link #wirelessEncodingItem()}），
-     * 所以这里拿到的实例与注册进注册表的是同一个。
-     */
-    private static void registerWirelessTerminals() {
-        de.mari_023.ae2wtlib.api.registration.AddTerminalEvent.register(event -> {
-            event.builder("pattern_disk_encoding_terminal",
-                    io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost::new,
-                    PatternDiskWirelessEncodingTermMenu.TYPE,
-                    wirelessEncodingItem(),
-                    de.mari_023.ae2wtlib.api.gui.Icon.PATTERN_ENCODING)
-                    .addTerminal();
-            event.builder("pattern_disk_management_terminal",
-                    io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost::new,
-                    PatternDiskWirelessManagementTermMenu.TYPE,
-                    wirelessManagementItem(),
-                    de.mari_023.ae2wtlib.api.gui.Icon.PATTERN_ACCESS)
-                    .addTerminal();
-        });
     }
 }

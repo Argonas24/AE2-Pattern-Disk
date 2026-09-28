@@ -30,12 +30,32 @@ public class WirelessPatternDiskTerminalHost extends WTMenuHost implements IPatt
 
     private final DiskEncodingLogic logic = new DiskEncodingLogic(this);
 
+    /**
+     * 无线终端的配置管理器。物品那侧（{@code ItemWT.getConfigManager}）只注册了排序/视图三项，
+     * 而管理终端要用的「显示模式」不在其中——直接读会抛 {@code UnsupportedSettingException}，
+     * 连带分组清单也发不出去（表格空白、按钮状态不回显）。所以在同一份存储（物品栈）上补注册一项，
+     * 前三项与物品侧保持一致，否则档位会两边打架。
+     */
+    private final appeng.api.util.IConfigManager configManager;
+
     public WirelessPatternDiskTerminalHost(ItemWT item, Player player, ItemMenuHostLocator locator,
             BiConsumer<Player, ISubMenu> returnToMainMenu) {
         super(item, player, locator, returnToMainMenu);
+        this.configManager = de.mari_023.ae2wtlib.api.terminal.AE2wtlibConfigManager.builder(this::getItemStack)
+                .registerSetting(appeng.api.config.Settings.SORT_BY, appeng.api.config.SortOrder.NAME)
+                .registerSetting(appeng.api.config.Settings.VIEW_MODE, appeng.api.config.ViewItems.ALL)
+                .registerSetting(appeng.api.config.Settings.SORT_DIRECTION, appeng.api.config.SortDir.ASCENDING)
+                .registerSetting(appeng.api.config.Settings.TERMINAL_SHOW_PATTERN_PROVIDERS,
+                        appeng.api.config.ShowPatternProviders.VISIBLE)
+                .build();
         // 开屏即恢复：组件里那份 NBT 就是上次关屏时写下的（没有则是全新终端，得到一份默认状态）。
         this.logic.readFromNBT(this.getItemStack().getOrDefault(componentType(), new CompoundTag()),
                 player.registryAccess());
+    }
+
+    @Override
+    public appeng.api.util.IConfigManager getConfigManager() {
+        return this.configManager;
     }
 
     @Override
