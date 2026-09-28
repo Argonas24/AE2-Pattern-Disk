@@ -17,9 +17,10 @@ import appeng.api.upgrades.IUpgradeInventory;
  * 按物品 id 剔除升级卡的包装层：除了「这些卡不许装」，其余判定与行为全部转发给 AE2 的真实实现。
  *（类名用 excluded 而不是 whitelist：这里做的是减法，白名单是反过来的语义。）
  *
- * <p>做这层包装的原因：AE2WTLib 的 {@code UpgradeHelper} 给**所有**无线终端统一挂上了量子桥卡与磁铁卡，
- * 而限制清单只能加不能减——{@code Upgrades} 里那张表是 private 静态 map 且只有 {@code add}；判定闸门
- * {@code UpgradeInventory#getMaxInstalled} 又来自一个包私有抽象类，无法继承。</p>
+ * <p>做这层包装的原因：限制清单只能加不能减——{@code Upgrades} 里那张表是 private 静态 map 且只有
+ * {@code add}；判定闸门 {@code UpgradeInventory#getMaxInstalled} 又来自一个包私有抽象类，无法继承。
+ * 需要「减」的情形来自 blanket 挂卡：模组可以用 {@code UpgradeHelper.addUpgradeToAllTerminals} 把一张卡
+ * 挂到当时已登记的全部无线终端上（wtlib 自己就是这么挂量子桥卡的），而本终端只想要其中一部分。</p>
  *
  * <p>用 id 而不是物品对象来判定：本模组编译期只依赖 {@code ae2wtlib_api}，wtlib 的物品常量（
  * {@code AE2wtlibItems}）在编译期不可见；而且 id 比较对"上游改动物品归属"也更宽容。</p>

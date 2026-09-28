@@ -23,8 +23,9 @@ import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessManagementTer
 public class WirelessPatternDiskTerminalItem extends ItemWT {
 
     /**
-     * 管理终端要剔除的升级卡：磁铁卡。AE2WTLib 的 {@code UpgradeHelper} 给所有无线终端统一挂了它，
-     * 而本终端用不上——按 id 声明（wtlib 的物品常量在编译期不可见）。
+     * 管理终端要剔除的升级卡：磁卡。按当前上游的登记表它本来就不会挂到本终端（wtlib 只把量子桥卡统一挂给
+     * 所有终端，磁卡只登记给自家的 WCT 与通用终端），这层剔除是防第三方 blanket 挂卡的保险，当前不可达。
+     * 用 id 而不是物品对象判定：本模组编译期只依赖 {@code ae2wtlib_api}，wtlib 的物品常量不可见。
      */
     private static final java.util.Set<net.minecraft.resources.ResourceLocation> MANAGEMENT_EXCLUDED = java.util.Set.of(
             net.minecraft.resources.ResourceLocation.parse("ae2wtlib:magnet_card"));
@@ -56,13 +57,10 @@ public class WirelessPatternDiskTerminalItem extends ItemWT {
     @Override
     public IUpgradeInventory getUpgrades(ItemStack stack) {
         var upgrades = super.getUpgrades(stack);
-        // 管理终端不该收磁铁卡（那是 wtlib 给所有无线终端统一挂的），按 id 剔除；编码终端保持原样。
+        // 管理终端不该收磁卡，按 id 剔除；编码终端保持原样。按当前上游，wtlib 不会给它挂磁卡，所以这里
+        // 通常不生效——留着是为了拦住第三方把卡 blanket 挂到所有无线终端的情形。
         // 包装层只改上限判定，NBT 与变更回调仍走 AE2 的实现。
         boolean exclude = this.menuType == PatternDiskWirelessManagementTermMenu.TYPE;
-        // 临时诊断：确认每个物品实例实际走的是哪一支（两个终端表现相同，得先定死这一环）。
-        org.slf4j.LoggerFactory.getLogger("ae2_pattern_disk").info(
-                "[upgrades] item={} thisMenuType={} isManagement={} excluded={}",
-                this.descriptionId, this.menuType, exclude, exclude ? MANAGEMENT_EXCLUDED : "[]");
         if (exclude) {
             return new ExcludedUpgradeInventory(upgrades, MANAGEMENT_EXCLUDED);
         }

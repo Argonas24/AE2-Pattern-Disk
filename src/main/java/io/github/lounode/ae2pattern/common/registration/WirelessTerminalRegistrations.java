@@ -65,7 +65,7 @@ public final class WirelessTerminalRegistrations {
             //
             // upgradeCount 是升级槽位数。AE2WTLib 的默认值也是 2，这里仍显式写出：它决定 UpgradeHelper
             // 给「所有终端」挂卡时的上限（取 Math.min(卡自己的 max, 槽位数)），显式声明后上游改默认值时
-            // 本模组的槽位数不会跟着漂。2 个槽够放量子桥 1 与磁卡 1。
+            // 本模组的槽位数不会跟着漂。2 个槽够放量子桥卡 1 张 + 能源卡 2 张。
             event.builder("pattern_disk_encoding",
                     WirelessPatternDiskTerminalHost::new,
                     PatternDiskWirelessEncodingTermMenu.TYPE,
@@ -81,21 +81,23 @@ public final class WirelessTerminalRegistrations {
                     .upgradeCount(2)
                     .addTerminal();
 
-            // 补挂量子桥卡与磁铁卡：UpgradeHelper.addUpgrades() 是一次性遍历 WTDefinition 完成的，
-            // 而它跑在本模组登记之前，所以这两个终端拿不到它统一挂的卡。
+            // 补挂量子桥卡：wtlib 的 UpgradeHelper.addUpgrades() 紧随 AddTerminalEvent.run() 执行，本模组此刻
+            // 已在 WTDefinition 里，理论上也会被它挂上；这里显式登记同值（1），不把行为押在上游的遍历时机上。
             addUpgradeCards(encodingItem, managementItem);
         });
     }
 
-    /** 给两个无线终端补挂量子桥卡与磁铁卡（各 1 张）。 */
+    /** 给两个无线终端补挂量子桥卡（各 1 张）。 */
     private static void addUpgradeCards(WirelessPatternDiskTerminalItem encodingItem,
             WirelessPatternDiskTerminalItem managementItem) {
-        for (var entry : Map.of("ae2wtlib:quantum_bridge_card", 1, "ae2wtlib:magnet_card", 1).entrySet()) {
+        // 只补挂量子桥卡：磁卡不需要注册到这两个终端（按上游登记表 wtlib 也不给它俩挂磁卡）。
+        for (var entry : Map.of("ae2wtlib:quantum_bridge_card", 1).entrySet()) {
             var card = BuiltInRegistries.ITEM.get(ResourceLocation.parse(entry.getKey()));
             if (card == null) {
                 continue;
             }
-            // 管理终端的磁铁卡不用在这里区分，物品侧的 ExcludedUpgradeInventory 会剔掉它。
+            // 磁卡不在这里挂：按上游的登记表，wtlib 只把量子桥卡统一挂给所有终端，磁卡是登记给它自家终端的，
+            // 所以物品侧那层 ExcludedUpgradeInventory 目前不会触发（留着作第三方 blanket 挂卡的保险）。
             appeng.api.upgrades.Upgrades.add(card, encodingItem, entry.getValue());
             appeng.api.upgrades.Upgrades.add(card, managementItem, entry.getValue());
         }
