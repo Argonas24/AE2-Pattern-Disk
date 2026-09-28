@@ -22,6 +22,8 @@ import appeng.core.localization.ItemModText;
 
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessManagementTermMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
 
 /**
@@ -63,8 +65,15 @@ public class JeiDiskEncodeRecipeHandler implements IUniversalRecipeTransferHandl
 
     @Override
     public Optional<MenuType<PatternDiskEncodingTermMenu>> getMenuType() {
+        // 顺序要紧：无线菜单继承面板菜单，isAssignableFrom 对父子双向成立，先判更具体的那个。
+        if (PatternDiskWirelessManagementTermMenu.class.isAssignableFrom(containerClass)) {
+            return Optional.of((MenuType) PatternDiskWirelessManagementTermMenu.TYPE);
+        }
         if (PatternDiskManagementTermMenu.class.isAssignableFrom(containerClass)) {
             return Optional.of((MenuType) AEPatternRegistries.MENU_PATTERN_DISK_MANAGEMENT_TERMINAL.get());
+        }
+        if (PatternDiskWirelessEncodingTermMenu.class.isAssignableFrom(containerClass)) {
+            return Optional.of((MenuType) PatternDiskWirelessEncodingTermMenu.TYPE);
         }
         return Optional.of((MenuType) AEPatternRegistries.MENU_PATTERN_DISK_ENCODING_TERMINAL.get());
     }

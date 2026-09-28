@@ -17,6 +17,8 @@ import io.github.lounode.ae2pattern.client.gui.PatternDiskEncodingTermScreen;
 import io.github.lounode.ae2pattern.client.gui.PatternDiskManagementTermScreen;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessManagementTermMenu;
 
 /**
  * JEI entry point: wires the pattern disk encoding terminal into JEI's recipe transfer ("+") button.
@@ -48,6 +50,12 @@ public class PatternDiskJeiPlugin implements IModPlugin {
         // 管理终端的菜单有自己的类型（管理菜单继承编码菜单，但 JEI 的登记表按 class 精确匹配），
         // 所以单独再登一条。
         registration.addUniversalRecipeTransferHandler(new JeiDiskEncodeRecipeHandler(helper, PatternDiskManagementTermMenu.class));
+        // 无线版同理：两个无线菜单也是独立的类，且各自用不同的 MenuType（见处理器里的 getMenuType）。
+        // 漏登的后果就是：装了 JEI 也在无线终端里看不到「编写样板」按钮。
+        registration.addUniversalRecipeTransferHandler(
+                new JeiDiskEncodeRecipeHandler(helper, PatternDiskWirelessEncodingTermMenu.class));
+        registration.addUniversalRecipeTransferHandler(
+                new JeiDiskEncodeRecipeHandler(helper, PatternDiskWirelessManagementTermMenu.class));
         registerCategoryCapture(registration);
     }
 

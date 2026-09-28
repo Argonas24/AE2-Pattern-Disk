@@ -67,6 +67,17 @@ public final class NaturalSortButton {
     }
 
     /**
+     * 服务端回推后同步用：直接设值，不触发 {@code onChanged}（否则会再发一轮包）。
+     */
+    public void setEnabled(boolean enabled) {
+        if (this.enabled == enabled) {
+            return;
+        }
+        this.enabled = enabled;
+        this.lastTooltipState = null;
+    }
+
+    /**
      * 每帧一次：只在「按 mod」时露面（其它档位下它无从生效），提示语只报当前状态——细致的排序规则不在
      * 这里展开，要看就去配置文件与指南（与「隐藏槽位」那几个开关一个口径）。
      */

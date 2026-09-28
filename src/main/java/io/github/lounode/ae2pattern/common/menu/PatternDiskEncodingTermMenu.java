@@ -58,6 +58,7 @@ import io.github.lounode.ae2pattern.AEPatternRegistries;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic;
 import io.github.lounode.ae2pattern.common.menu.slot.NetworkBlankPatternSlot;
+import io.github.lounode.ae2pattern.common.menu.slot.PatternOutputSlot;
 import io.github.lounode.ae2pattern.common.part.PatternDiskEncodingTerminalPart;
 import io.github.lounode.ae2pattern.api.IPatternDiskHost;
 import io.github.lounode.ae2pattern.api.PatternDiskApi;
@@ -73,7 +74,7 @@ import io.github.lounode.ae2pattern.network.DiskListPayload;
  * list: click a disk to write the currently encoded pattern into it, shift-right-click to bind the
  * pattern's prefix to the disk (renaming it), middle-click to rename, and a mini search bar.</p>
  */
-public class PatternDiskEncodingTermMenu extends MEStorageMenu {
+public class PatternDiskEncodingTermMenu extends MEStorageMenu implements IPatternEncodingHost {
 
     private static final int CRAFTING_GRID_WIDTH = 3;
     private static final int CRAFTING_GRID_HEIGHT = 3;
@@ -320,8 +321,7 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
         // stocked by hand - encoding pulls from the network (see encode()).
         this.addSlot(this.blankPatternSlot = new NetworkBlankPatternSlot(), SlotSemantics.BLANK_PATTERN);
         this.addSlot(
-                this.encodedPatternSlot = new RestrictedInputSlot(RestrictedInputSlot.PlacableItemType.ENCODED_PATTERN,
-                        encodingLogic.getEncodedPatternInv(), 0),
+                this.encodedPatternSlot = new PatternOutputSlot(encodingLogic.getEncodedPatternInv(), 0),
                 SlotSemantics.ENCODED_PATTERN);
         this.encodedPatternSlot.setStackLimit(1);
 
@@ -382,6 +382,9 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
 
     // ---- Encoding ------------------------------------------------------------
 
+    /** 四套编码的实现已搬去 {@link PatternEncodingLogic}，这里只留一个引用。 */
+    private final PatternEncodingLogic patternEncodingLogic = new PatternEncodingLogic(this);
+
     public void encode() {
         if (isClientSide()) {
             // 配方类别只有客户端知道（导入时记下的），而服务端绑标记时要用它，所以像 bindPrefix 一样先单独送过去。
@@ -395,7 +398,7 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
         // 先取值再清空，所以提前退出也不会把这次的候选留给下一次编码。
         var autoDisks = pendingAutoDisks;
         pendingAutoDisks = NO_DISKS;
-        ItemStack encodedPattern = encodePattern();
+        ItemStack encodedPattern = patternEncodingLogic.encodePattern();
         if (encodedPattern != null) {
             var encodeOutput = this.encodedPatternSlot.getItem();
             if (!encodeOutput.isEmpty()
@@ -414,6 +417,11 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
             // 磁盘」两步。候选由客户端给出（顺序就是屏幕上的顺序）；全部写不进时由顺位路径报原因。
             if (autoDisks.length > 0) {
                 transferToFirstWritable(autoDisks);
+                // 唯一目标：顺手把标记写成它的工作方块。类别由客户端先一步送过来了（见本方法开头），
+                // 而 bindPrefix 自己会在类别缺失时跳过，所以这里不必再判一次。
+                if (autoDisks.length == 1) {
+                    bindPrefix(autoDisks[0]);
+                }
             }
         } else {
             // 网格里没有可编码的东西时，如果编码槽里正停着一枚写好的样板，「编写样板」的意图就是把它写进目标
@@ -424,6 +432,9 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
                 if (autoDisks.length > 0) {
                     // 走既有的写盘路径：写进去、清空编码槽、退回空白样板，一处口径。
                     transferToFirstWritable(autoDisks);
+                    if (autoDisks.length == 1) {
+                        bindPrefix(autoDisks[0]);
+                    }
                 }
                 return;
             }
@@ -436,105 +447,6 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
         if (PatternDetailsHelper.isEncodedPattern(encodedPattern)) {
             this.encodedPatternSlot.set(AEItems.BLANK_PATTERN.stack(encodedPattern.getCount()));
         }
-    }
-
-    @Nullable
-    private ItemStack encodePattern() {
-        return switch (this.mode) {
-            case CRAFTING -> encodeCraftingPattern();
-            case PROCESSING -> encodeProcessingPattern();
-            case SMITHING_TABLE -> encodeSmithingTablePattern();
-            case STONECUTTING -> encodeStonecuttingPattern();
-        };
-    }
-
-    @Nullable
-    private ItemStack encodeCraftingPattern() {
-        var ingredients = new ItemStack[CRAFTING_GRID_SLOTS];
-        boolean valid = false;
-        for (int x = 0; x < ingredients.length; x++) {
-            ingredients[x] = getEncodedCraftingIngredient(x);
-            if (ingredients[x] == null) return null;
-            else if (!ingredients[x].isEmpty()) valid = true;
-        }
-        if (!valid) return null;
-        var result = getAndUpdateOutput();
-        if (result.isEmpty() || currentRecipe == null) return null;
-        return PatternDetailsHelper.encodeCraftingPattern(this.currentRecipe, ingredients, result, isSubstitute(),
-                isSubstituteFluids());
-    }
-
-    @Nullable
-    private ItemStack encodeProcessingPattern() {
-        var inputs = new GenericStack[encodedInputsInv.size()];
-        boolean valid = false;
-        for (int slot = 0; slot < encodedInputsInv.size(); slot++) {
-            inputs[slot] = encodedInputsInv.getStack(slot);
-            if (inputs[slot] != null) valid = true;
-        }
-        if (!valid) return null;
-
-        // 同物品合并：启用时相同 AEKey 的输入合并为单槽
-        java.util.List<GenericStack> mergedInputs;
-        if (isMergeSameItems()) {
-            var byKey = new java.util.LinkedHashMap<AEKey, Long>();
-            for (var in : inputs) {
-                if (in != null) {
-                    byKey.merge(in.what(), in.amount(), Long::sum);
-                }
-            }
-            mergedInputs = new java.util.ArrayList<>();
-            for (var e : byKey.entrySet()) {
-                mergedInputs.add(new GenericStack(e.getKey(), e.getValue()));
-            }
-        } else {
-            mergedInputs = new java.util.ArrayList<>(Arrays.asList(inputs));
-            mergedInputs.removeIf(Objects::isNull);
-        }
-
-        var outputs = new GenericStack[encodedOutputsInv.size()];
-        for (int slot = 0; slot < encodedOutputsInv.size(); slot++) {
-            outputs[slot] = encodedOutputsInv.getStack(slot);
-        }
-        if (outputs[0] == null) return null;
-        return PatternDetailsHelper.encodeProcessingPattern(mergedInputs, Arrays.asList(outputs));
-    }
-
-    @Nullable
-    private ItemStack encodeSmithingTablePattern() {
-        if (!(encodedInputsInv.getKey(0) instanceof AEItemKey template)
-                || !(encodedInputsInv.getKey(1) instanceof AEItemKey base)
-                || !(encodedInputsInv.getKey(2) instanceof AEItemKey addition)) {
-            return null;
-        }
-        var input = new SmithingRecipeInput(template.toStack(), base.toStack(), addition.toStack());
-        var level = getPlayer().level();
-        var recipe = level.getRecipeManager().getRecipeFor(RecipeType.SMITHING, input, level).orElse(null);
-        if (recipe == null) return null;
-        var output = AEItemKey.of(recipe.value().assemble(input, level.registryAccess()));
-        return PatternDetailsHelper.encodeSmithingTablePattern(recipe, template, base, addition, output,
-                encodingLogic.isSubstitution());
-    }
-
-    @Nullable
-    private ItemStack encodeStonecuttingPattern() {
-        if (stonecuttingRecipeId == null) return null;
-        if (!(encodedInputsInv.getKey(0) instanceof AEItemKey input)) return null;
-        var recipeInput = new SingleRecipeInput(input.toStack());
-        var level = getPlayer().level();
-        var recipe = level.getRecipeManager().getRecipeFor(RecipeType.STONECUTTING, recipeInput, level,
-                stonecuttingRecipeId).orElse(null);
-        if (recipe == null) return null;
-        var output = AEItemKey.of(recipe.value().getResultItem(level.registryAccess()));
-        return PatternDetailsHelper.encodeStonecuttingPattern(recipe, input, output, encodingLogic.isSubstitution());
-    }
-
-    @Nullable
-    private ItemStack getEncodedCraftingIngredient(int slot) {
-        var what = encodedInputsInv.getKey(slot);
-        if (what == null) return ItemStack.EMPTY;
-        else if (what instanceof AEItemKey itemKey) return itemKey.toStack(1);
-        else return null;
     }
 
     private boolean isBlankPattern(ItemStack output) {
@@ -612,12 +524,24 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
         }
     }
 
+    /**
+     * 取编码区某一格的物品。它是编码逻辑与产物预览共用的取格口径，所以由宿主接口暴露，
+     * 免得 {@link PatternEncodingLogic} 里再写一份一样的。
+     */
+    @Override
+    public @Nullable ItemStack getCraftingIngredient(int slot) {
+        var what = this.encodedInputsInv.getKey(slot);
+        if (what == null) return ItemStack.EMPTY;
+        else if (what instanceof AEItemKey itemKey) return itemKey.toStack(1);
+        else return null;
+    }
+
     private ItemStack getAndUpdateOutput() {
         var level = this.getPlayerInventory().player.level();
         var items = NonNullList.withSize(CRAFTING_GRID_WIDTH * CRAFTING_GRID_HEIGHT, ItemStack.EMPTY);
         boolean invalidIngredients = false;
         for (int x = 0; x < items.size(); x++) {
-            var stack = getEncodedCraftingIngredient(x);
+            var stack = getCraftingIngredient(x);
             if (stack != null) items.set(x, stack);
             else invalidIngredients = true;
         }
@@ -642,7 +566,7 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
             return; // No recipe -> no substitution
         }
 
-        var encodedPattern = encodePattern();
+        var encodedPattern = patternEncodingLogic.encodePattern();
         if (encodedPattern != null) {
             var decodedPattern = PatternDetailsHelper.decodePattern(encodedPattern,
                     this.getPlayerInventory().player.level());
@@ -1668,6 +1592,54 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
         } else {
             this.mode = mode;
         }
+    }
+
+    // ---- IPatternEncodingHost：四套编码抽到 PatternEncodingLogic 之后，
+    // 菜单只经这些访问器把状态交给它，自身的私有字段不再被编码逻辑直接触碰 ----
+
+    @Override
+    public EncodingMode getEncodingMode() {
+        return this.mode;
+    }
+
+    @Override
+    public ConfigInventory getEncodedInputs() {
+        return this.encodedInputsInv;
+    }
+
+    @Override
+    public ConfigInventory getEncodedOutputs() {
+        return this.encodedOutputsInv;
+    }
+
+    @Override
+    public boolean isEncodingSubstitute() {
+        return this.isSubstitute();
+    }
+
+    @Override
+    public boolean isEncodingSubstituteFluids() {
+        return this.isSubstituteFluids();
+    }
+
+    @Override
+    public boolean isEncodingMergeSameItems() {
+        return this.isMergeSameItems();
+    }
+
+    @Override
+    public @Nullable RecipeHolder<CraftingRecipe> getCurrentCraftingRecipe() {
+        return this.currentRecipe;
+    }
+
+    @Override
+    public ItemStack updateAndGetCraftingOutput() {
+        return this.getAndUpdateOutput();
+    }
+
+    @Override
+    public net.minecraft.world.level.Level getLevel() {
+        return getPlayer().level();
     }
 
     public boolean isSubstitute() { return this.substitute; }

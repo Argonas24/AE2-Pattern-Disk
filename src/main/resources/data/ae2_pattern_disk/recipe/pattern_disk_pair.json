@@ -1,0 +1,11 @@
+{
+  "type": "ae2wtlib:combine",
+  "terminalA": {
+    "item": "ae2_pattern_disk:wireless_pattern_disk_encoding_terminal"
+  },
+  "terminalB": {
+    "item": "ae2_pattern_disk:wireless_pattern_disk_management_terminal"
+  },
+  "terminalAName": "pattern_disk_encoding",
+  "terminalBName": "pattern_disk_management"
+}

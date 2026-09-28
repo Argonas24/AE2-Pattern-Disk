@@ -452,12 +452,22 @@ public class PatternDiskEncodingTermScreen extends MEStorageScreen<PatternDiskEn
         // 传给面板
         diskListPanel.setDiskEntries(List.copyOf(diskEntries));
 
-        // 编码按钮要不要直接落盘：只在玩家确实在用搜索栏筛盘时才顺位写（没搜索时「编写样板」的语义就是
-        // 只编码，不该把样板随手塞进列表里的第一张盘）。这一步必须等过滤做完：玩家点按钮时看到的就是这份
-        // 列表，早一帧算出来就可能把目标算成此刻已经看不到的那张盘。
-        menu.setClientAutoDisks(isDiskSearchActive()
-                ? capCandidates(diskEntries.stream().mapToLong(DiskListPanel.DiskEntry::serial).toArray())
-                : NO_DISKS);
+        // 编码按钮要不要直接落盘。这一步必须等过滤做完：玩家点按钮时看到的就是这份列表，早一帧算出来就可能
+        // 把目标算成此刻已经看不到的那张盘。
+        // ① 搜索栏筛过盘：按列表顺位写（沿用原语义）；
+        // ② 没搜索：不再「随手塞第一张」，但若是符合当前样板类型的盘全网只剩这一张，它就是唯一目标——
+        //    直接落盘，省掉先点中那张盘的两步。判定只认标记，不靠显示名猜类型。
+        long[] autoDisks = NO_DISKS;
+        if (isDiskSearchActive()) {
+            autoDisks = capCandidates(diskEntries.stream().mapToLong(DiskListPanel.DiskEntry::serial).toArray());
+        } else {
+            var matched = diskEntries.stream().filter(this::matchesCurrentType)
+                    .mapToLong(DiskListPanel.DiskEntry::serial).toArray();
+            if (matched.length == 1) {
+                autoDisks = matched;
+            }
+        }
+        menu.setClientAutoDisks(autoDisks);
 
         // 中键的结算：要等到刷新回来的那一份列表，否则读到的还是旧标记。等不到就作罢，而不是拿旧标记
         // 改名——那样只会把上一次的机器名写上去。
@@ -484,6 +494,26 @@ public class PatternDiskEncodingTermScreen extends MEStorageScreen<PatternDiskEn
     private static boolean hasMark(DiskEntry entry) {
         var mark = entry.stack().get(AEPatternRegistries.DISK_PREFIX.get());
         return mark != null && !mark.isEmpty();
+    }
+
+    /**
+     * 这张盘的标记是否算「符合当前样板类型」。
+     *
+     * <p>磁盘标记有两种写法：导入过配方时写 {@code #<配方类别>}（如 {@code #minecraft:crafting}），
+     * 手动编码留下的写 {@code #mode:<模式>}——同一台机器两种都得认。比较基准是当前模式的规范类别，
+     * 加工样板没有公认类别（见 {@code categoryForMode}），一律不算，免得把样板随机送进某台机器。</p>
+     */
+    private boolean matchesCurrentType(DiskEntry entry) {
+        var raw = entry.stack().get(AEPatternRegistries.DISK_PREFIX.get());
+        if (raw == null || raw.isEmpty()) {
+            return false;
+        }
+        var mode = menu.getMode();
+        var category = PatternDiskEncodingTermMenu.categoryForMode(mode);
+        if (category == null) {
+            return false;
+        }
+        return ("#" + category).equals(raw) || PatternDiskEncodingTermMenu.modeMarkId(mode).equals(raw);
     }
 
     /** Renames the disk {@code serial} after the machine its mark stands for. */

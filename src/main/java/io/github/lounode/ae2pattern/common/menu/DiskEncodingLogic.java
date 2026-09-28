@@ -46,6 +46,19 @@ public class DiskEncodingLogic implements InternalInventoryHost {
     private boolean substituteFluids = true;
     private boolean mergeSameItems = true;
     private boolean showUnmarkedDisks = false;
+    /** 管理终端：隐藏没有内容的样板供应器槽位（屏幕左侧列表的显示开关）。面板与无线共用这一份状态。 */
+    private boolean hideEmptySlots = true;
+    /** 管理终端：列表里被选中的样板磁盘序列号，0 表示未选中。跟着终端走，关屏重开不丢。 */
+    private long selectedSerial;
+    /** 管理终端新增搜索栏的搜索范围：只看输出、只看输入、或两者都看。 */
+    private SearchScope searchScope = SearchScope.BOTH;
+    /** 「附加排序」开关（mod 档下组内按名字里的数值排）。原本是纯客户端视图状态，换屏即失，
+     * 所以并入这里才能跟着终端走。 */
+    private boolean naturalSort = true;
+    /** 管理终端的「显示模式」。面板版存在 AE2 的配置管理器里（设置由部件注册），而无线宿主的配置管理器
+     * 来自物品（ItemWT 只注册了排序/视图三项），读那项设置会抛 UnsupportedSettingException，
+     * 连带把分组清单也发不出去——所以无线一律用这份本模组自己的值。 */
+    private appeng.api.config.ShowPatternProviders shownProviders = appeng.api.config.ShowPatternProviders.VISIBLE;
     private boolean isLoading = false;
     @Nullable
     private ResourceLocation stonecuttingRecipeId;
@@ -155,6 +168,29 @@ public class DiskEncodingLogic implements InternalInventoryHost {
 
     public ConfigInventory getEncodedInputInv() { return encodedInputInv; }
     public ConfigInventory getEncodedOutputInv() { return encodedOutputInv; }
+    public boolean isHideEmptySlots() { return this.hideEmptySlots; }
+    public void setHideEmptySlots(boolean hide) { this.hideEmptySlots = hide; }
+    public long getSelectedSerial() { return this.selectedSerial; }
+    public void setSelectedSerial(long serial) { this.selectedSerial = serial; }
+    public SearchScope getSearchScope() { return this.searchScope; }
+    public void setSearchScope(SearchScope scope) { this.searchScope = scope; }
+    public boolean isNaturalSort() { return this.naturalSort; }
+    public void setNaturalSort(boolean naturalSort) { this.naturalSort = naturalSort; }
+    public appeng.api.config.ShowPatternProviders getShownProviders() { return this.shownProviders; }
+    public void setShownProviders(appeng.api.config.ShowPatternProviders shownProviders) {
+        this.shownProviders = shownProviders;
+    }
+
+    /** 新增搜索栏的搜索范围三态，与 PAT 搜索栏旁那枚轮换按钮一一对应。 */
+    public enum SearchScope {
+        /** 只匹配样板的输出。 */
+        OUTPUT,
+        /** 只匹配样板的输入。 */
+        INPUT,
+        /** 输入与输出都匹配。 */
+        BOTH
+    }
+
     public InternalInventory getBlankPatternInv() { return blankPatternInv; }
     public InternalInventory getEncodedPatternInv() { return encodedPatternInv; }
 
@@ -168,6 +204,17 @@ public class DiskEncodingLogic implements InternalInventoryHost {
             // 不能直接 getBoolean——那会把缺失读成 false，把开关反过来。
             this.mergeSameItems = !data.contains("mergeSameItems") || data.getBoolean("mergeSameItems");
             this.showUnmarkedDisks = data.contains("showUnmarkedDisks") && data.getBoolean("showUnmarkedDisks");
+            // 同上：缺键要落到默认值（默认隐藏空槽），不能直接 getBoolean 把开关反过来。
+            this.hideEmptySlots = !data.contains("hideEmptySlots") || data.getBoolean("hideEmptySlots");
+            this.selectedSerial = data.getLong("selectedSerial");
+            try { this.searchScope = SearchScope.valueOf(data.getString("searchScope")); } catch (IllegalArgumentException ignored) { this.searchScope = SearchScope.BOTH; }
+            // 缺键默认开（与按钮自己的默认一致），不能直接 getBoolean 把开关反过来。
+            this.naturalSort = !data.contains("naturalSort") || data.getBoolean("naturalSort");
+            try {
+                this.shownProviders = appeng.api.config.ShowPatternProviders.valueOf(data.getString("shownProviders"));
+            } catch (IllegalArgumentException ignored) {
+                this.shownProviders = appeng.api.config.ShowPatternProviders.VISIBLE;
+            }
             if (data.contains("stonecuttingRecipeId", net.minecraft.nbt.Tag.TAG_STRING)) {
                 this.stonecuttingRecipeId = ResourceLocation.parse(data.getString("stonecuttingRecipeId"));
             } else { this.stonecuttingRecipeId = null; }
@@ -184,6 +231,11 @@ public class DiskEncodingLogic implements InternalInventoryHost {
         data.putBoolean("substituteFluids", this.substituteFluids);
         data.putBoolean("mergeSameItems", this.mergeSameItems);
         data.putBoolean("showUnmarkedDisks", this.showUnmarkedDisks);
+        data.putBoolean("hideEmptySlots", this.hideEmptySlots);
+        data.putLong("selectedSerial", this.selectedSerial);
+        data.putString("searchScope", this.searchScope.name());
+        data.putBoolean("naturalSort", this.naturalSort);
+        data.putString("shownProviders", this.shownProviders.name());
         if (this.stonecuttingRecipeId != null) data.putString("stonecuttingRecipeId", this.stonecuttingRecipeId.toString());
         blankPatternInv.writeToNBT(data, "blankPattern", registries);
         encodedPatternInv.writeToNBT(data, "encodedPattern", registries);

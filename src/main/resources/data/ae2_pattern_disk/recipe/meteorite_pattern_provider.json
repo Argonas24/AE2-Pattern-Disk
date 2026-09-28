@@ -2,7 +2,7 @@
   "type": "minecraft:crafting_shapeless",
   "category": "misc",
   "ingredients": [
-    { "item": "ae2_pattern_disk:pattern_disk_provider" },
+    { "item": "ae2cs:meteorite_pattern_provider" },
     { "item": "ae2_pattern_disk:pattern_disk_16k" }
   ],
   "result": {

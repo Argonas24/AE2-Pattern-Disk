@@ -48,6 +48,9 @@ public class PatternDiskProviderScreen extends AEBaseScreen<PatternDiskProviderM
     private final ToggleButton showInPatternAccessTerminalButton;
     private final LockReasonWidget lockReason;
 
+    /** 是否自装配版：两个构造器共用本类，指南页要按它分流。 */
+    private final boolean selfAssembling;
+
     /** 磁盘槽空槽覆盖层：states.png (240,16,16,16)。 */
     private static final Blitter DISK_SLOT_OVERLAY = Blitter
             .texture(ResourceLocation.parse("ae2_pattern_disk:textures/guis/states.png"))
@@ -55,16 +58,20 @@ public class PatternDiskProviderScreen extends AEBaseScreen<PatternDiskProviderM
 
     public PatternDiskProviderScreen(PatternDiskProviderMenu menu, Inventory playerInventory, Component title) {
         this(menu, playerInventory, title,
-                StyleManager.loadStyleDoc("/screens/ae2_pattern_disk/pattern_disk_provider.json"));
+                StyleManager.loadStyleDoc("/screens/ae2_pattern_disk/pattern_disk_provider.json"), false);
     }
 
     /**
      * 同一套布局、换一份文档：派生设备（自装配样板磁盘供应器）的字样挂在布局文档里，所以它用这里传进来的
      * 那份文档开屏。构造之后的一切都与本类共用。
+     *
+     * @param selfAssembling 是否是自装配版：只影响指南页指向（它照着 AE2 Crystal Science 那台做，
+     *                       问号应该跳去对方的页面）。
      */
     public PatternDiskProviderScreen(PatternDiskProviderMenu menu, Inventory playerInventory, Component title,
-            ScreenStyle style) {
+            ScreenStyle style, boolean selfAssembling) {
         super(menu, playerInventory, title, style);
+        this.selfAssembling = selfAssembling;
 
         this.blockingModeButton = new ServerSettingToggleButton<>(Settings.BLOCKING_MODE, YesNo.NO);
         this.addToLeftToolbar(this.blockingModeButton);
@@ -112,6 +119,11 @@ public class PatternDiskProviderScreen extends AEBaseScreen<PatternDiskProviderM
 
     @Override
     protected PageAnchor getHelpTopic() {
+        // 自装配版（装了 AE2 Crystal Science 才有）指向它那台供应器的指南页：本设备就是照它做的，
+        // 讲清来龙去脉比重复本模组的页面有用。普通版仍指向自己的页面。
+        if (this.selfAssembling) {
+            return new PageAnchor(ResourceLocation.parse("ae2cs:meteorite_pattern_provider.md"), null);
+        }
         return new PageAnchor(
                 ResourceLocation.parse("ae2_pattern_disk:items-blocks-machines/pattern_disk_provider.md"),
                 null);

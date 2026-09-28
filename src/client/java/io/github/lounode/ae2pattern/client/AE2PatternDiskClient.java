@@ -116,7 +116,8 @@ public class AE2PatternDiskClient {
                             net.minecraft.network.chat.Component title) {
                         return new PatternDiskProviderScreen(menu, playerInventory, title,
                                 StyleManager.loadStyleDoc(
-                                        "/screens/ae2_pattern_disk/meteorite_pattern_provider.json"));
+                                        "/screens/ae2_pattern_disk/meteorite_pattern_provider.json"),
+                                true);
                     }
                 });
     }
@@ -135,10 +136,18 @@ public class AE2PatternDiskClient {
                     public PatternDiskEncodingTermScreen create(PatternDiskEncodingTermMenu menu,
                             net.minecraft.world.entity.player.Inventory playerInventory,
                             net.minecraft.network.chat.Component title) {
-                        return new PatternDiskWirelessEncodingTermScreen(
-                                (PatternDiskWirelessEncodingTermMenu) menu, playerInventory, title,
-                                StyleManager.loadStyleDoc(
-                                        "/screens/ae2_pattern_disk/wireless_pattern_disk_encoding_terminal.json"));
+                        var style = StyleManager.loadStyleDoc(
+                                "/screens/ae2_pattern_disk/wireless_pattern_disk_encoding_terminal.json");
+                        var wirelessMenu = (PatternDiskWirelessEncodingTermMenu) menu;
+                        // 与面板版同一处理：装了带终端上传契约的 EAE+ 时换用「无线 + 上传」的子类，
+                        // 好让 EAE+ 把「上传到供应器」按钮注入进来；否则用普通无线屏幕。
+                        // 子类同样只能反射创建（理由见 ClientExtendedAEPlusCompat 的类注释）。
+                        if (io.github.lounode.ae2pattern.integration.extendedae_plus.ExtendedAEPlusCompat
+                                .hasUploadContract()) {
+                            return io.github.lounode.ae2pattern.client.integration.extendedae_plus.ClientExtendedAEPlusCompat
+                                    .createWirelessUploadScreen(wirelessMenu, playerInventory, title, style);
+                        }
+                        return new PatternDiskWirelessEncodingTermScreen(wirelessMenu, playerInventory, title, style);
                     }
                 });
         event.register(AEPatternRegistries.MENU_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL.get(),
