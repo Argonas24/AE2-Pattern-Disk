@@ -23,7 +23,11 @@ import io.github.lounode.ae2pattern.client.gui.PatternDiskEncodingTermScreen;
 import io.github.lounode.ae2pattern.client.gui.PatternDiskAssemblerScreen;
 import io.github.lounode.ae2pattern.client.gui.PatternDiskProviderScreen;
 import io.github.lounode.ae2pattern.client.gui.PatternTransfererScreen;
+import io.github.lounode.ae2pattern.client.gui.PatternDiskWirelessEncodingTermScreen;
+import io.github.lounode.ae2pattern.client.gui.PatternDiskWirelessManagementTermScreen;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessManagementTermMenu;
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 
 /**
@@ -79,6 +83,41 @@ public class AE2PatternDiskClient {
         event.register(AEPatternRegistries.MENU_BATCH_ASSEMBLER.get(), BatchAssemblerScreen::new);
         registerEncodingTerminalScreen(event);
         registerManagementTerminalScreen(event);
+        registerWirelessTerminalScreens(event);
+    }
+
+    /**
+     * 两个无线版终端的屏幕：布局文档直接用面板版那份（GUI 复用），差的只是多挂上 AE2WTLib 的升级面板与
+     * 终端切换按钮（见两个无线屏幕类）。
+     */
+    private void registerWirelessTerminalScreens(RegisterMenuScreensEvent event) {
+        // 与面板版同一套写法：屏幕类型的泛型参数写在父屏的菜单类型上（AEBaseScreen 的签名把菜单类型写死），
+        // 注册时用真实菜单类型，工厂里再收窄——ScreenConstructor 要求屏幕的 MenuAccess 与菜单类型一致，
+        // lambda 推不出这一层，所以用匿名类显式写。
+        event.register(AEPatternRegistries.MENU_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL.get(),
+                new net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<PatternDiskEncodingTermMenu, PatternDiskEncodingTermScreen>() {
+                    @Override
+                    public PatternDiskEncodingTermScreen create(PatternDiskEncodingTermMenu menu,
+                            net.minecraft.world.entity.player.Inventory playerInventory,
+                            net.minecraft.network.chat.Component title) {
+                        return new PatternDiskWirelessEncodingTermScreen(
+                                (PatternDiskWirelessEncodingTermMenu) menu, playerInventory, title,
+                                StyleManager.loadStyleDoc(
+                                        "/screens/ae2_pattern_disk/wireless_pattern_disk_encoding_terminal.json"));
+                    }
+                });
+        event.register(AEPatternRegistries.MENU_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL.get(),
+                new net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<PatternDiskEncodingTermMenu, PatternDiskEncodingTermScreen>() {
+                    @Override
+                    public PatternDiskEncodingTermScreen create(PatternDiskEncodingTermMenu menu,
+                            net.minecraft.world.entity.player.Inventory playerInventory,
+                            net.minecraft.network.chat.Component title) {
+                        return new PatternDiskWirelessManagementTermScreen(
+                                (PatternDiskWirelessManagementTermMenu) menu, playerInventory, title,
+                                StyleManager.loadStyleDoc(
+                                        "/screens/ae2_pattern_disk/wireless_pattern_disk_management_terminal.json"));
+                    }
+                });
     }
 
     private void registerManagementTerminalScreen(RegisterMenuScreensEvent event) {

@@ -60,7 +60,10 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
 
     // 不可用 build()：理由同父类，单通道注册。
     public static final MenuType<PatternDiskManagementTermMenu> TYPE = MenuTypeBuilder
-            .create(PatternDiskManagementTermMenu::new, PatternDiskManagementTerminalPart.class)
+            // lambda 而不是 ::new：本类现在有两个构造（面板 / 无线），方法引用在 MenuFactory 与
+            // TypedMenuFactory 两个重载之间无法定型。
+            .create((id, ip, host) -> new PatternDiskManagementTermMenu(id, ip, host),
+                    PatternDiskManagementTerminalPart.class)
             .buildUnregistered(ResourceLocation.parse("ae2_pattern_disk:pattern_disk_management_terminal"));
 
     /** 客户端侧：服务端推送的分组清单（Screen 每帧读）。 */
@@ -98,7 +101,16 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
     public PatternDiskManagementTermMenu(int id, Inventory ip, PatternDiskManagementTerminalPart host) {
         // 必须显式传本类的 TYPE：走父类那个只收 (id, ip, host) 的构造器会拿到编码终端的菜单类型，
         // 客户端据此查到的是编码终端的屏幕。
-        super(TYPE, id, ip, host);
+        this(TYPE, id, ip, host);
+    }
+
+    /**
+     * 子类（无线版管理终端）用：面板那支走上面的构造器、类型写死本类的 TYPE；无线那支把自己的 TYPE 传进来，
+     * 否则客户端会开出面板版界面。
+     */
+    protected PatternDiskManagementTermMenu(MenuType<?> menuType, int id, Inventory ip,
+            IPatternDiskTerminalHost host) {
+        super(menuType, id, ip, host);
         registerClientAction(ACTION_INSERT_DISK, InsertDiskRequest.class, this::insertDisk);
         registerClientAction(ACTION_STORE_INVENTORY_DISK, StoreInventoryDiskRequest.class, this::storeInventoryDisk);
     }

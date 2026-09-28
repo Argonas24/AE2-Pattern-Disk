@@ -179,7 +179,7 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
         return java.util.List.of(PatternDiskEncodingTermMenu.class);
     }
 
-    private final PatternDiskEncodingTerminalPart host;
+    private final IPatternDiskTerminalHost host;
     private final DiskEncodingLogic encodingLogic;
     private final ConfigInventory encodedInputsInv;
     private final ConfigInventory encodedOutputsInv;
@@ -274,7 +274,7 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
      * 把类型开成参数，子类显式传自己的 {@code TYPE}。
      */
     protected PatternDiskEncodingTermMenu(MenuType<?> menuType, int id, Inventory ip,
-            PatternDiskEncodingTerminalPart host) {
+            IPatternDiskTerminalHost host) {
         super(menuType, id, ip, host, true);
         this.host = host;
         this.encodingLogic = host.getLogic();
@@ -1757,5 +1757,4 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu {
     public FakeSlot getSmithingTableBaseSlot() { return smithingTableBaseSlot; }
     public FakeSlot getSmithingTableAdditionSlot() { return smithingTableAdditionSlot; }
     public List<RecipeHolder<StonecutterRecipe>> getStonecuttingRecipes() { return stonecuttingRecipes; }
-    public PatternDiskEncodingTerminalPart getHostPart() { return host; }
 }

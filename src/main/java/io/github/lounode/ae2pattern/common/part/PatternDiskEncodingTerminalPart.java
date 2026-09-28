@@ -16,11 +16,11 @@ import appeng.parts.PartModel;
 import appeng.parts.reporting.AbstractTerminalPart;
 
 import io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic;
-import io.github.lounode.ae2pattern.common.menu.IDiskEncodingLogicHost;
+import io.github.lounode.ae2pattern.common.menu.IPatternDiskTerminalHost;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 
 public class PatternDiskEncodingTerminalPart extends AbstractTerminalPart
-        implements IDiskEncodingLogicHost {
+        implements IPatternDiskTerminalHost {
 
     @PartModels
     public static final ResourceLocation MODEL_OFF = ResourceLocation.parse(

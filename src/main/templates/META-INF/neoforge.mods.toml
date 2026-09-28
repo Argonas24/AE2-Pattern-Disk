@@ -116,6 +116,17 @@ versionRange="*"
 ordering="NONE"
 side="BOTH"
 
+# AE2 Wireless Terminals (AE2WTLib) is required: the two wireless terminals are built on its terminal API - the
+# item base class, the menu host, and the AddTerminalEvent registration all come from its api artifact, which
+# ships with the mod itself (the screen style our wireless screens include lives there too).
+# AFTER keeps us behind it, so its terminal list is populated before we add to it.
+[[dependencies.${mod_id}]]
+modId="ae2wtlib"
+type="required"
+versionRange="[19.5.0,)"
+ordering="AFTER"
+side="BOTH"
+
 # ExtendedAE Plus is optional: its terminal-upload contract is one this mod implements (a screen subclass and
 # a menu subclass), and both are created through reflection so their classes only load when the contract is
 # there. No version bound of our own - the published 1.6.2 lacks the interface, the 1.21.1 branch has it, and

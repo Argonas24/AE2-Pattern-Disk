@@ -216,6 +216,12 @@ dependencies {
     localRuntime 'de.mari_023:ae2wtlib:19.5.0'
     localRuntime 'de.mari_023:ae2wtlib_api:19.5.0'
 
+    // 无线终端（本模组两个终端的无线版）编译期靠 ae2wtlib_api：
+    // 物品继承 ItemWT、宿主继承 WTMenuHost、屏幕实现 IUniversalTerminalCapable、登记走 AddTerminalEvent，
+    // 全在这份 api 里。main 与 client 两个源集都要看得到。
+    compileOnly 'de.mari_023:ae2wtlib_api:19.5.0'
+    clientCompileOnly 'de.mari_023:ae2wtlib_api:19.5.0'
+
     // EAE (ExtendedAE) + AAE (AdvancedAE) dev environment: reference mods for GUI/feature parity work.
     // 1.21.1/NeoForge/AE2 19.2.x compatible (EAE 1.21-2.2.35, AAE 1.6.11-1.21.1).
     localRuntime 'curse.maven:ex-pattern-provider-892005:8511901'

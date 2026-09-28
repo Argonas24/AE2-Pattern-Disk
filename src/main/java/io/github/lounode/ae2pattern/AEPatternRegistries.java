@@ -3,6 +3,7 @@ package io.github.lounode.ae2pattern;
 import com.mojang.serialization.Codec;
 
 import net.minecraft.core.component.DataComponentType;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -33,12 +34,15 @@ import io.github.lounode.ae2pattern.common.block.entity.PatternDiskAssemblerBloc
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskProviderBlockEntity;
 import io.github.lounode.ae2pattern.common.block.entity.PatternTransfererBlockEntity;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
+import io.github.lounode.ae2pattern.common.item.WirelessPatternDiskTerminalItem;
 import io.github.lounode.ae2pattern.common.menu.BatchAssemblerMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskAssemblerMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskProviderMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternTransfererMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessEncodingTermMenu;
+import io.github.lounode.ae2pattern.common.menu.PatternDiskWirelessManagementTermMenu;
 import io.github.lounode.ae2pattern.common.part.PatternDiskEncodingTerminalPart;
 import io.github.lounode.ae2pattern.common.part.PatternDiskManagementTerminalPart;
 import io.github.lounode.ae2pattern.common.part.PatternDiskProviderPart;
@@ -110,6 +114,31 @@ public final class AEPatternRegistries {
                 props -> new PartItem<>(props, PatternDiskProviderPart.class,
                         PatternDiskProviderPart::new));
     }
+
+    /**
+     * 两个终端的无线版：物品形态，走 AE2WTLib 的无线终端体系（电池、通用无线终端里的切换、热键都由它管）。
+     * 物品属性由 AE2WTLib 的 {@code ItemWT} 定死，注册时那个 {@code Properties} 参数用不上；两个物品只
+     * 差菜单类型，所以共用同一个物品类。
+     */
+    /**
+     * 先造实例、再交给注册表：AE2WTLib 登记无线终端时要的是物品实例，而它的时机在自己那侧的 ITEM
+     * RegisterEvent 里——那一刻 DeferredItem 还没绑定（读它会抛 NPE），所以回调里只能喂即时实例。
+     * 注册用的 supplier 返回同一个实例，注册结果与平时一致。
+     */
+    public static final WirelessPatternDiskTerminalItem WIRELESS_PATTERN_DISK_ENCODING_TERMINAL = new WirelessPatternDiskTerminalItem(
+            PatternDiskWirelessEncodingTermMenu.TYPE);
+
+    public static final WirelessPatternDiskTerminalItem WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL = new WirelessPatternDiskTerminalItem(
+            PatternDiskWirelessManagementTermMenu.TYPE);
+
+    /** 注册表里的把手；物品实例就是上面那两个。 */
+    public static final DeferredItem<WirelessPatternDiskTerminalItem> ITEM_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL = ITEMS
+            .registerItem("wireless_pattern_disk_encoding_terminal",
+                    props -> WIRELESS_PATTERN_DISK_ENCODING_TERMINAL);
+
+    public static final DeferredItem<WirelessPatternDiskTerminalItem> ITEM_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL = ITEMS
+            .registerItem("wireless_pattern_disk_management_terminal",
+                    props -> WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL);
 
     /** Reference to AE2's blank pattern, exposed for the transferer's network return. */
     public static ItemStack blankPattern() {
@@ -212,6 +241,12 @@ public final class AEPatternRegistries {
     public static final DeferredHolder<MenuType<?>, MenuType<PatternDiskManagementTermMenu>> MENU_PATTERN_DISK_MANAGEMENT_TERMINAL = MENUS
             .register("pattern_disk_management_terminal", () -> PatternDiskManagementTermMenu.TYPE);
 
+    public static final DeferredHolder<MenuType<?>, MenuType<PatternDiskWirelessEncodingTermMenu>> MENU_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL = MENUS
+            .register("wireless_pattern_disk_encoding_terminal", () -> PatternDiskWirelessEncodingTermMenu.TYPE);
+
+    public static final DeferredHolder<MenuType<?>, MenuType<PatternDiskWirelessManagementTermMenu>> MENU_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL = MENUS
+            .register("wireless_pattern_disk_management_terminal", () -> PatternDiskWirelessManagementTermMenu.TYPE);
+
     // ---- Data components -----------------------------------------------------
 
     public static final DeferredRegister.DataComponents COMPONENTS = DeferredRegister.createDataComponents(
@@ -242,6 +277,15 @@ public final class AEPatternRegistries {
                     "disk_prefix",
                     builder -> builder.persistent(Codec.STRING).networkSynchronized(ByteBufCodecs.STRING_UTF8));
 
+    /**
+     * 无线终端的编码状态（网格内容、模式、开关）：存在物品上而不是世界里，于是终端跟着物品走。
+     * 面板形态用不上它（那支写部件的 NBT）。
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<CompoundTag>> WIRELESS_TERMINAL_LOGIC = COMPONENTS
+            .registerComponentType("wireless_terminal_logic",
+                    builder -> builder.persistent(CompoundTag.CODEC)
+                            .networkSynchronized(ByteBufCodecs.COMPOUND_TAG));
+
     // ---- Creative tab --------------------------------------------------------
 
     public static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(
@@ -265,6 +309,8 @@ public final class AEPatternRegistries {
                         output.accept(ITEM_PATTERN_DISK_ENCODING_TERMINAL.get());
         output.accept(ITEM_PATTERN_DISK_MANAGEMENT_TERMINAL.get());
                         output.accept(ITEM_CABLE_PATTERN_DISK_PROVIDER.get());
+                        output.accept(ITEM_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL.get());
+                        output.accept(ITEM_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL.get());
                     })
                     .build());
 
@@ -326,10 +372,34 @@ public final class AEPatternRegistries {
         COMPONENTS.register(modBus);
         TABS.register(modBus);
 
+        registerWirelessTerminals();
+
         // The api resolves the component through the holder, so it is handed the holder itself - a
         // DeferredHolder is not populated until the registry events run, and reads happen after that.
         PatternDiskApi.bindDiskContentsComponent(DISK_CONTENTS);
 
         PatternDiskApi.setExternalUploadPolicy(ExtendedAEPlusCompat.asUploadPolicy());
+    }
+
+    /**
+     * 把两个无线终端登记进 AE2WTLib：终端名、宿主工厂、菜单类型、物品、图标。登记只是把回调交出去，真正的
+     * 实例化在 AE2WTLib 自己的初始化阶段（它遍历这份名单填通用无线终端的选择列表与热键），所以这里取
+     * {@code get()} 是安全的。
+     */
+    private static void registerWirelessTerminals() {
+        de.mari_023.ae2wtlib.api.registration.AddTerminalEvent.register(event -> {
+            event.builder("pattern_disk_encoding_terminal",
+                    io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost::new,
+                    PatternDiskWirelessEncodingTermMenu.TYPE,
+                    WIRELESS_PATTERN_DISK_ENCODING_TERMINAL,
+                    de.mari_023.ae2wtlib.api.gui.Icon.PATTERN_ENCODING)
+                    .addTerminal();
+            event.builder("pattern_disk_management_terminal",
+                    io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost::new,
+                    PatternDiskWirelessManagementTermMenu.TYPE,
+                    WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL,
+                    de.mari_023.ae2wtlib.api.gui.Icon.PATTERN_ACCESS)
+                    .addTerminal();
+        });
     }
 }

@@ -1,0 +1,61 @@
+package io.github.lounode.ae2pattern.common.menu;
+
+import java.util.function.BiConsumer;
+
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+
+import appeng.menu.ISubMenu;
+import appeng.menu.locator.ItemMenuHostLocator;
+
+import de.mari_023.ae2wtlib.api.terminal.ItemWT;
+import de.mari_023.ae2wtlib.api.terminal.WTMenuHost;
+
+import io.github.lounode.ae2pattern.AEPatternRegistries;
+
+/**
+ * 无线终端的宿主：与面板版的 {@link io.github.lounode.ae2pattern.common.part.PatternDiskEncodingTerminalPart}
+ * 对位——同一份 {@link DiskEncodingLogic}，同一份菜单代码，差别只在状态存在哪。
+ *
+ * <p>面板把编码状态写进部件的 NBT，无线写进物品自己的数据组件（{@link AEPatternRegistries#WIRELESS_TERMINAL_LOGIC}），
+ * 于是终端跟着物品走：换槽位、放背包、丢地上再捡起来，回来还是上次那台。AE2WTLib 自己的无线编码终端
+ * （{@code WETMenuHost}）也是这个口径，只是它用 AE2WTLib 的组件。</p>
+ *
+ * <p>面板形态有两种（编码 / 管理），无线形态同样两种；菜单不同、宿主与逻辑相同，所以这一个宿主类给两个
+ * 无线终端共用，靠各自的 {@code WTMenuHostFactory} 交给各自的菜单。</p>
+ */
+public class WirelessPatternDiskTerminalHost extends WTMenuHost implements IPatternDiskTerminalHost {
+
+    private final DiskEncodingLogic logic = new DiskEncodingLogic(this);
+
+    public WirelessPatternDiskTerminalHost(ItemWT item, Player player, ItemMenuHostLocator locator,
+            BiConsumer<Player, ISubMenu> returnToMainMenu) {
+        super(item, player, locator, returnToMainMenu);
+        // 开屏即恢复：组件里那份 NBT 就是上次关屏时写下的（没有则是全新终端，得到一份默认状态）。
+        this.logic.readFromNBT(this.getItemStack().getOrDefault(componentType(), new CompoundTag()),
+                player.registryAccess());
+    }
+
+    @Override
+    public DiskEncodingLogic getLogic() {
+        return this.logic;
+    }
+
+    @Override
+    public Level getLevel() {
+        return getPlayer().level();
+    }
+
+    @Override
+    public void markForSave() {
+        var tag = new CompoundTag();
+        this.logic.writeToNBT(tag, getPlayer().registryAccess());
+        this.getItemStack().set(componentType(), tag);
+    }
+
+    private static DataComponentType<CompoundTag> componentType() {
+        return AEPatternRegistries.WIRELESS_TERMINAL_LOGIC.get();
+    }
+}

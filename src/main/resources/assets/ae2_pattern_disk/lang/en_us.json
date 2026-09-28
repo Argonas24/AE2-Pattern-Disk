@@ -92,6 +92,8 @@
   "item.ae2_pattern_disk.pattern_disk_64k": "64k Pattern Disk",
   "item.ae2_pattern_disk.pattern_disk_encoding_terminal": "ME Pattern Disk Encoding Terminal",
   "item.ae2_pattern_disk.pattern_disk_management_terminal": "ME Pattern Disk Management Terminal",
+  "item.ae2_pattern_disk.wireless_pattern_disk_encoding_terminal": "Wireless Pattern Disk Encoding Terminal",
+  "item.ae2_pattern_disk.wireless_pattern_disk_management_terminal": "Wireless Pattern Disk Management Terminal",
   "itemGroup.ae2_pattern_disk": "AE2 Pattern Disk",
   "jade.ae2_pattern_disk.batch_assembler.queued": "Queued: %s",
   "jade.ae2_pattern_disk.batch_assembler.state.idle": "Idle",

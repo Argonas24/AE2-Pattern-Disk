@@ -92,6 +92,8 @@
   "item.ae2_pattern_disk.pattern_disk_64k": "64k 样板磁盘",
   "item.ae2_pattern_disk.pattern_disk_encoding_terminal": "ME样板磁盘编码终端",
   "item.ae2_pattern_disk.pattern_disk_management_terminal": "ME样板磁盘管理终端",
+  "item.ae2_pattern_disk.wireless_pattern_disk_encoding_terminal": "无线样板磁盘编码终端",
+  "item.ae2_pattern_disk.wireless_pattern_disk_management_terminal": "无线样板磁盘管理终端",
   "itemGroup.ae2_pattern_disk": "AE2 样板磁盘",
   "jade.ae2_pattern_disk.batch_assembler.queued": "排队：%s 个",
   "jade.ae2_pattern_disk.batch_assembler.state.idle": "空闲",
