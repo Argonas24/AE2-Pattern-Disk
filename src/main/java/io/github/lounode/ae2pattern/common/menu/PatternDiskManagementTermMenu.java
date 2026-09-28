@@ -71,9 +71,19 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
 
     /** 客户端侧：服务端最近一次是按哪种显示模式筛的清单，屏幕用它回显按钮图标。 */
     private ShowPatternProviders shownProviders = ShowPatternProviders.VISIBLE;
+    /** 服务端下发的“是否隐藏空槽位”当前值（屏幕开关的初值，不再由客户端自行默认）。 */
+    private boolean viewHideEmptySlots = true;
+    /** 服务端下发的当前选中盘序列号，0 = 未选中。 */
+    private long viewSelectedSerial;
+    /** 服务端下发的样板内容搜索范围（新搜索栏那枚轮换按钮的当前档）。 */
+    private DiskEncodingLogic.SearchScope viewSearchScope = DiskEncodingLogic.SearchScope.BOTH;
+    /** 服务端下发的「附加排序」开关当前值。 */
+    private boolean viewNaturalSort = true;
 
     private static final String ACTION_INSERT_DISK = "insertDisk";
     private static final String ACTION_STORE_INVENTORY_DISK = "storeInventoryDisk";
+    /** 客户端回传显示状态（隐藏空槽位 / 选中盘 / 搜索范围 / 附加排序）用的 AE2 客户端动作。 */
+    private static final String ACTION_VIEW_STATE = "patternDiskViewState";
 
     /** 分组键 → 宿主，与推给客户端的清单同一份口径：客户端只拿得到键，存入时得靠它找回宿主。 */
     /** 分组键（显示名）→ 该组里所有能收下盘的宿主：同名容器合成一组，存盘时要从组里挑一台还有空槽的。 */
@@ -113,6 +123,7 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
         super(menuType, id, ip, host);
         registerClientAction(ACTION_INSERT_DISK, InsertDiskRequest.class, this::insertDisk);
         registerClientAction(ACTION_STORE_INVENTORY_DISK, StoreInventoryDiskRequest.class, this::storeInventoryDisk);
+        registerClientAction(ACTION_VIEW_STATE, String.class, this::applyViewStateEncoded);
     }
 
     /**
@@ -319,7 +330,9 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
             groups.add(new DiskHostListPayload.HostGroup(builder.key, builder.name, builder.icon,
                     List.copyOf(builder.disks), builder.emptySlots));
         }
-        sendPacketToClient(new DiskHostListPayload(groups, mode));
+        var viewLogic = ((IPatternDiskTerminalHost) getHost()).getLogic();
+        sendPacketToClient(new DiskHostListPayload(groups, mode, viewLogic.isHideEmptySlots(),
+                viewLogic.getSelectedSerial(), viewLogic.getSearchScope(), viewLogic.isNaturalSort()));
     }
 
     /**
@@ -352,7 +365,14 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
      * 与 AE2 样板访问终端同一个键，读的也是同一份实例。
      */
     public ShowPatternProviders getShownProviders() {
-        return getHost().getConfigManager().getSetting(Settings.TERMINAL_SHOW_PATTERN_PROVIDERS);
+        // 无线宿主的配置管理器由物品提供（ItemWT 只注册了排序/视图三项），读这项设置会抛
+        // UnsupportedSettingException——pushHostList 一旦抛出去，整个分组清单就发不到客户端，
+        // 表现为表格空白、按钮状态也不回显。所以捕获后回退到本模组自己的逻辑值。
+        try {
+            return getHost().getConfigManager().getSetting(Settings.TERMINAL_SHOW_PATTERN_PROVIDERS);
+        } catch (appeng.api.util.UnsupportedSettingException e) {
+            return ((IPatternDiskTerminalHost) getHost()).getLogic().getShownProviders();
+        }
     }
 
     @Override
@@ -383,9 +403,89 @@ public class PatternDiskManagementTermMenu extends PatternDiskEncodingTermMenu {
 
     // ---- 客户端侧：接收 ----
 
-    public void receiveHostList(List<DiskHostListPayload.HostGroup> hosts, ShowPatternProviders shownProviders) {
+    public void receiveHostList(List<DiskHostListPayload.HostGroup> hosts, ShowPatternProviders shownProviders,
+            boolean hideEmptySlots, long selectedSerial, DiskEncodingLogic.SearchScope searchScope,
+            boolean naturalSort) {
         this.hostList = List.copyOf(hosts);
         this.shownProviders = shownProviders;
+        this.viewHideEmptySlots = hideEmptySlots;
+        this.viewSelectedSerial = selectedSerial;
+        this.viewSearchScope = searchScope;
+        this.viewNaturalSort = naturalSort;
+    }
+
+    /** 屏幕开屏时读它恢复「附加排序」开关。 */
+    public boolean viewNaturalSort() {
+        return this.viewNaturalSort;
+    }
+
+    /** 屏幕开屏时读它恢复样板内容搜索范围。 */
+    public DiskEncodingLogic.SearchScope viewSearchScope() {
+        return this.viewSearchScope;
+    }
+
+    /** 屏幕开屏时读它初始化「隐藏空槽位」开关，保证重开回到上次的值。 */
+    public boolean viewHideEmptySlots() {
+        return this.viewHideEmptySlots;
+    }
+
+    /** 屏幕开屏时读它恢复选中的那张盘（0 = 未选中）。 */
+    public long viewSelectedSerial() {
+        return this.viewSelectedSerial;
+    }
+
+    /**
+     * 服务端：客户端改动了显示状态（是否隐藏空槽位、选中了哪张盘），落到编码逻辑上。
+     * 面板版写部件 NBT、无线版写物品自己的数据组件，所以下次打开（哪怕退出游戏再进）都能恢复。
+     */
+    /**
+     * 客户端：把显示状态回传。走 AE2 的 clientAction（与 insertDisk 同一通道），不再自己发 C2S 包——
+     * 包注册面少一层，也不会因菜单类型判断失配而静默丢包。
+     */
+    public void sendViewStateToServer(boolean hideEmptySlots, long selectedSerial,
+            DiskEncodingLogic.SearchScope searchScope, boolean naturalSort) {
+        sendClientAction(ACTION_VIEW_STATE,
+                hideEmptySlots + ";" + selectedSerial + ";" + searchScope.name() + ";" + naturalSort);
+    }
+
+    /** 服务端侧：解析 {@link #sendViewStateToServer} 发来的四元组。 */
+    private void applyViewStateEncoded(String encoded) {
+        var parts = encoded.split(";", -1);
+        if (parts.length != 4) {
+            return;
+        }
+        var scope = DiskEncodingLogic.SearchScope.BOTH;
+        try {
+            scope = DiskEncodingLogic.SearchScope.valueOf(parts[2]);
+        } catch (IllegalArgumentException ignored) {
+            // 档位名读不回来就用默认，不让一个坏值把状态卡死。
+        }
+        long serial = 0L;
+        try {
+            serial = Long.parseLong(parts[1]);
+        } catch (NumberFormatException ignored) {
+            // 同上。
+        }
+        applyViewState(Boolean.parseBoolean(parts[0]), serial, scope, Boolean.parseBoolean(parts[3]));
+    }
+
+    public void applyViewState(boolean hideEmptySlots, long selectedSerial,
+            DiskEncodingLogic.SearchScope searchScope, boolean naturalSort) {
+        // AEBaseMenu.getHost() 的静态类型是 ITerminalHost，取逻辑得落到本模组的宿主契约上。
+        var host = (IPatternDiskTerminalHost) getHost();
+        var logic = host.getLogic();
+        logic.setHideEmptySlots(hideEmptySlots);
+        logic.setSelectedSerial(selectedSerial);
+        logic.setSearchScope(searchScope);
+        logic.setNaturalSort(naturalSort);
+        host.markForSave();
+        // 临时探针（定位“按钮状态不持久化”后删）：看服务端到底收没收到客户端的回传。
+        System.out.println("[probe] applyViewState hide=" + hideEmptySlots + " serial=" + selectedSerial
+                + " scope=" + searchScope + " natural=" + naturalSort + " menu=" + getClass().getSimpleName());
+        // 关键：syncDiskList 是按“磁盘/宿主指纹”决定要不要重发的，指纹没变就直接 return、不会走到
+        // onDiskListRebuilt——于是刚改的显示状态永远发不出去，客户端看到的还是旧值（症状就是“改了没生效”）。
+        // 同 shownProviders 变化时的做法：主动把当前视图数据重推一次。
+        pushHostList(lastDiskEntries);
     }
 
     /** 服务端最近一次筛清单用的显示模式；屏幕拿它回显按钮图标。 */

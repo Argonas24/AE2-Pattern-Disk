@@ -31,7 +31,9 @@ import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
  * <p>{@code shownProviders} 一起下发：它决定服务端按哪种“显示模式”筛的这份清单，客户端据此回显按钮图标。
  * 放在这个包里而不用 {@code @GuiSync}，是因为两者总是同时变化。</p>
  */
-public record DiskHostListPayload(List<HostGroup> hosts, ShowPatternProviders shownProviders)
+public record DiskHostListPayload(List<HostGroup> hosts, ShowPatternProviders shownProviders,
+        boolean hideEmptySlots, long selectedSerial,
+        io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope searchScope, boolean naturalSort)
         implements ClientboundPacket {
 
     public static final Type<DiskHostListPayload> TYPE = new Type<>(
@@ -47,7 +49,19 @@ public record DiskHostListPayload(List<HostGroup> hosts, ShowPatternProviders sh
 
     public static DiskHostListPayload decode(RegistryFriendlyByteBuf data) {
         var hosts = HostGroup.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(data);
-        return new DiskHostListPayload(hosts, readShownProviders(data));
+        return new DiskHostListPayload(hosts, readShownProviders(data), data.readBoolean(), data.readLong(),
+                readSearchScope(data), data.readBoolean());
+    }
+
+    /** 枚举名读不回来（协议错配）时回退到默认档，不让一个坏包把客户端带崩。 */
+    private static io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope readSearchScope(
+            RegistryFriendlyByteBuf data) {
+        var name = ByteBufCodecs.STRING_UTF8.decode(data);
+        try {
+            return io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope.BOTH;
+        }
     }
 
     /** 枚举名读不回来（协议错配）时回退到默认档，不让一个坏包把客户端带崩。 */
@@ -64,6 +78,11 @@ public record DiskHostListPayload(List<HostGroup> hosts, ShowPatternProviders sh
         HostGroup.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(data, hosts);
         // 按名而非序号编码：枚举顺序变化不会读错档位。
         ByteBufCodecs.STRING_UTF8.encode(data, shownProviders.name());
+        // 显示状态一起下发：它是“跟着终端走”的状态，存在服务端的编码逻辑里，客户端不能自己拍默认值。
+        data.writeBoolean(this.hideEmptySlots);
+        data.writeLong(this.selectedSerial);
+        ByteBufCodecs.STRING_UTF8.encode(data, this.searchScope.name());
+        data.writeBoolean(this.naturalSort);
     }
 
     /**
@@ -72,7 +91,7 @@ public record DiskHostListPayload(List<HostGroup> hosts, ShowPatternProviders sh
     @Override
     public void handleOnClient(Player player) {
         if (player.containerMenu instanceof PatternDiskManagementTermMenu menu) {
-            menu.receiveHostList(hosts, shownProviders);
+            menu.receiveHostList(hosts, shownProviders, hideEmptySlots, selectedSerial, searchScope, naturalSort);
         }
     }
 

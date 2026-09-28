@@ -29,6 +29,13 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 
+// 行模型已抽到 DiskTableRowModel：静态导入让 Row / HostRow / DiskRow / FreeSlotsRow 这些短名
+// 在本类内照旧可用，下面的表格绘制与点击分发因此一句都没改。
+import static io.github.lounode.ae2pattern.client.gui.DiskTableRowModel.DiskRow;
+import static io.github.lounode.ae2pattern.client.gui.DiskTableRowModel.FreeSlotsRow;
+import static io.github.lounode.ae2pattern.client.gui.DiskTableRowModel.HostRow;
+import static io.github.lounode.ae2pattern.client.gui.DiskTableRowModel.Row;
+
 import appeng.api.config.Settings;
 import appeng.api.config.ShowPatternProviders;
 import appeng.api.config.SortDir;
@@ -53,6 +60,7 @@ import io.github.lounode.ae2pattern.client.sort.SortTiers;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskEncodingTermMenu;
 import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
+import io.github.lounode.ae2pattern.network.TerminalViewStatePayload;
 import io.github.lounode.ae2pattern.network.VisibleDisksPayload;
 
 /**
@@ -109,6 +117,21 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
 
     /** 当前是否收起空槽。默认收起：表的常规观感保持紧凑，想看全槽布局再展开。 */
     private boolean hideEmptySlots = true;
+    /** 上一次从服务端读到的值，只用于“服务端变了才跟随”，免得客户端刚点完就被自己的回推拉回去。 */
+    private boolean lastServerHideEmptySlots = true;
+    private long lastServerSelectedSerial;
+    /** 样板内容搜索范围（第 4 项新搜索栏）：本地副本 + 服务端上次给的值（只在它变了时跟随）。 */
+    private io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope searchScope = io.github.lounode
+            .ae2pattern.common.menu.DiskEncodingLogic.SearchScope.BOTH;
+    private io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope lastServerSearchScope = io.github.lounode
+            .ae2pattern.common.menu.DiskEncodingLogic.SearchScope.BOTH;
+    /** 服务端上次给的「附加排序」开关值；它一变就说明该跟随服务端。 */
+    private boolean lastServerNaturalSort = true;
+    /** 样板内容搜索栏与它的搜索范围轮换按钮（第 4 项）。 */
+    private appeng.client.gui.widgets.AETextField contentSearchField;
+    private ContentSearchScopeButton contentSearchScopeButton;
+    /** 搜索栏里的文本；空白表示不过滤。 */
+    private String contentSearchText = "";
 
     /**
      * 右键选中的磁盘（「编写样板」的写盘目标）；0 = 没选。
@@ -183,10 +206,14 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
 
     /** 一次排序的结果；内容或排序口径一变就重算（拿内容列表的引用比，服务端每次推送会换一个新列表）。 */
     private record DisplayOrder(List<ItemStack> contents, SortOrder order, SortDir dir, boolean natural,
+            String searchText, io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope searchScope,
             int[] storageIndexes) {
 
-        boolean stillMatches(List<ItemStack> contents, SortOrder order, SortDir dir, boolean natural) {
-            return this.contents == contents && this.order == order && this.dir == dir && this.natural == natural;
+        boolean stillMatches(List<ItemStack> contents, SortOrder order, SortDir dir, boolean natural,
+                String searchText,
+                io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope searchScope) {
+            return this.contents == contents && this.order == order && this.dir == dir && this.natural == natural
+                    && this.searchText.equals(searchText) && this.searchScope == searchScope;
         }
     }
 
@@ -243,27 +270,6 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
     private static final Blitter BUTTON_BG_NORMAL = Blitter.texture(STATES).src(208, 224, 18, 20);
     private static final Blitter BUTTON_BG_HOVER = Blitter.texture(STATES).src(226, 224, 18, 20);
 
-    private sealed interface Row permits HostRow, DiskRow, FreeSlotsRow {
-    }
-
-    /** 组头行：一台（或几台同名合并的）宿主机器。{@code diskCount} 是当前过滤/显示口径下的磁盘数。 */
-    private record HostRow(String groupName, String name, ItemStack icon, int diskCount) implements Row {
-    }
-
-    /**
-     * 磁盘行。{@code from == 0} 是首行：第 0 格是磁盘本身、后面 16 格是它里面的样板；{@code from > 0} 是续行：
-     * 17 格全是样板，{@code from} 是这一行第 0 格对应的样板序号（续行从第一格开始接）。
-     */
-    private record DiskRow(String groupName, long serial, ItemStack disk, int from) implements Row {
-    }
-
-    /**
-     * 供应器剩余的一个空槽，一行一格、竖着排在第一列。{@code foldedCount} &gt; 0 时这一行代表整组的全部空槽，
-     * 数字写在格的右上角。
-     */
-    private record FreeSlotsRow(String groupName, int foldedCount) implements Row {
-    }
-
     private final List<Row> rows = new ArrayList<>();
     private final LongSet requestedContents = new LongOpenHashSet();
 
@@ -286,6 +292,9 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
         this.hideSlotsButton = new StatesToggleButton(ICON_HIDE_SLOTS, ICON_SHOW_SLOTS, state -> {
             this.hideEmptySlots = !this.hideEmptySlots;
             this.hideSlotsButton.setState(this.hideEmptySlots);
+            // 回传：状态本体在服务端的编码逻辑里（面板写部件 NBT、无线写物品组件），不回传就不会被记住。
+            getMenu().sendViewStateToServer(this.hideEmptySlots, this.selectedSerial, this.searchScope,
+                    naturalSortEnabled());
         });
         this.hideSlotsButton.setBackground(BUTTON_BG_NORMAL, BUTTON_BG_HOVER);
         this.hideSlotsButton.setTooltipOn(List.of(
@@ -296,6 +305,22 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
                 Component.translatable("gui.ae2_pattern_disk.management_terminal.show_slots_hint")));
         this.hideSlotsButton.setState(this.hideEmptySlots);
         addToLeftToolbar(this.hideSlotsButton);
+
+        // 样板内容搜索栏（第 4 项）：顶部居中、与磁盘搜索栏同一行（样式 JSON 的 contentSearch 给坐标），
+        // 右侧紧跟搜索范围轮换按钮（contentSearchScope）。位置与磁盘搜索栏的附属按钮同一摆法。
+        this.contentSearchField = widgets.addTextField("contentSearch");
+        this.contentSearchField.setPlaceholder(Component.translatable("gui.ae2_pattern_disk.content_search"));
+        this.contentSearchField.setTooltipMessage(List.of(
+                Component.translatable("gui.ae2_pattern_disk.content_search.title"),
+                Component.translatable("gui.ae2_pattern_disk.content_search.hint")));
+        this.contentSearchField.setResponder(text -> this.contentSearchText = text == null ? "" : text);
+        this.contentSearchScopeButton = new ContentSearchScopeButton(this.searchScope, scope -> {
+            this.searchScope = scope;
+            // 范围是终端自己的状态（面板写部件 NBT、无线写物品组件），改完得回传才会被记住。
+            getMenu().sendViewStateToServer(this.hideEmptySlots, this.selectedSerial, this.searchScope,
+                    naturalSortEnabled());
+        });
+        widgets.add("contentSearchScope", this.contentSearchScopeButton.widget());
 
         // 滚动条：给表格自己接一条（样式 JSON 的 widgets.tableScrollbar 给了落点，高度每帧按行数设）。
         // 必须换一个 id：父类在自己的构造器里已经用 "scrollbar" 那一个 id 注册过物品网格的滚动条，
@@ -412,47 +437,35 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
             visibleDisks.put(entry.serial(), entry);
         }
 
-        var serialToPatternCount = new HashMap<Long, Integer>();
-        for (var group : menu.getHostList()) {
-            for (var disk : group.disks()) {
-                serialToPatternCount.put(disk.serial(), disk.patternCount());
-            }
-        }
-
         boolean searched = isDiskSearchActive();
+        // 内容搜索（新搜索栏）是否在生效：它决定不匹配的样板/机器/空行要不要真的从表里消失。
+        boolean contentSearched = this.contentSearchText != null && !this.contentSearchText.isEmpty();
 
         // 盘内顺序缓存跟着当下的盘集合走：被取走、被搜索筛掉的盘不再留条目（连同它那份旧 contents 列表）。
         displayOrders.keySet().retainAll(visibleDisks.keySet());
 
-        var rebuilt = new ArrayList<Row>();
         // 机器列表默认按显示名排（大小写不敏感的字符串序；中文名走 Unicode 码点序、不是拼音序——项目里
         // 唯一的拼音能力只有搜索用的 JECH 匹配，取不到拼音串）。同名机器的相对次序沿用服务端原序
         //（同名本就合并成一行，这里排的是不同机器之间）。
         var hosts = new ArrayList<>(menu.getHostList());
         hosts.sort(Comparator.comparing(host -> host.name() == null ? "" : host.name(),
                 String.CASE_INSENSITIVE_ORDER));
+        // 行的构建（三层过滤、续行、空槽行）已搬去 DiskTableRowBuilder，屏幕只负责把当下状态打包成
+        // 输入：哪些盘可见、每张盘命中多少样板（-1 表示内容未下发，构建器不会据此隐藏）。
+        var groupInputs = new ArrayList<DiskTableRowBuilder.GroupInput>(hosts.size());
         for (var group : hosts) {
-            var groupDisks = new ArrayList<DiskListPanel.DiskEntry>();
+            var diskInputs = new ArrayList<DiskTableRowBuilder.DiskInput>(group.disks().size());
             for (var disk : group.disks()) {
                 var visible = visibleDisks.get(disk.serial());
                 if (visible != null) {
-                    groupDisks.add(visible);
+                    diskInputs.add(new DiskTableRowBuilder.DiskInput(disk.serial(), visible.stack(),
+                            disk.patternCount(), matchedPatternCount(disk.serial())));
                 }
             }
-            if (searched && groupDisks.isEmpty()) {
-                continue;
-            }
-
-            rebuilt.add(new HostRow(group.key(), group.name(), group.icon(), groupDisks.size()));
-            for (var disk : groupDisks) {
-                rebuilt.add(new DiskRow(group.key(), disk.serial(), disk.stack(), 0));
-                // 一张盘的内容超过一行时往下续行：首行第 0 格占给了磁盘，续行没有磁盘格，17 格全放内容。
-                for (int from = COLUMNS - 1; from < serialToPatternCount.getOrDefault(disk.serial(), 0); from += COLUMNS) {
-                    rebuilt.add(new DiskRow(group.key(), disk.serial(), ItemStack.EMPTY, from));
-                }
-            }
-            appendFreeSlots(rebuilt, group.key(), group.emptySlots());
+            groupInputs.add(new DiskTableRowBuilder.GroupInput(group.key(), group.name(), group.icon(),
+                    diskInputs, group.emptySlots()));
         }
+        var rebuilt = DiskTableRowBuilder.build(groupInputs, searched, contentSearched, hideEmptySlots);
 
         if (!rows.equals(rebuilt)) {
             rows.clear();
@@ -465,27 +478,12 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
     /** 搜索框里有没有内容；有内容时没命中磁盘的组不进表（否则一搜就满屏空机器）。 */
     // isDiskSearchActive() 来自基类：编码终端的自动写盘也按同一判据。
 
-    /**
-     * 给刚数完的那一组补「剩余槽位」行。
-     *
-     * <p>空槽数直接取服务端在分组里报的「真正的空格数」（同名几台是它们的和）：搜索框筛掉部分盘、主机行开关隐藏
-     * 整组都不会让它变化，槽位与别的物品共用（NEO ECO 把样板盘与已编码样板放在同一批槽里）也不会被算错。</p>
-     *
-     * <p>收起时整组只留一行，行上写它代表多少空槽；展开时每个空槽一行，竖着排在第一列。</p>
-     */
-    private void appendFreeSlots(List<Row> out, String groupName, int empty) {
-        if (empty <= 0 || groupName == null || groupName.isEmpty()) {
-            return;
+    /** 该盘命中内容搜索的样板数；内容未下发时返回 -1（未知，调用方不得据此隐藏）。 */
+    private int matchedPatternCount(long serial) {
+        if (getMenu().getDiskContents(serial) == null) {
+            return -1;
         }
-
-        if (hideEmptySlots) {
-            out.add(new FreeSlotsRow(groupName, empty));
-            return;
-        }
-        // 展开：一格一行，竖着排在第一列——空槽不是“盘里的内容”，不铺满整行。
-        for (int i = 0; i < empty; i++) {
-            out.add(new FreeSlotsRow(groupName, 0));
-        }
+        return displayOrder(serial).length;
     }
 
     private void clampScroll() {
@@ -570,6 +568,34 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
         super.updateBeforeRender();
         // 显示模式按钮的档位回显：换档后服务端会重推分组清单，档位跟着清单回来。
         this.showProvidersButton.set(getMenu().shownProviders());
+        // 服务端那份才是权威（面板存部件 NBT、无线存物品组件）。只在它真的变了时跟随，开屏与刷新都能恢复上次的值。
+        if (this.lastServerHideEmptySlots != getMenu().viewHideEmptySlots()) {
+            this.lastServerHideEmptySlots = getMenu().viewHideEmptySlots();
+            this.hideEmptySlots = this.lastServerHideEmptySlots;
+            this.hideSlotsButton.setState(this.hideEmptySlots);
+        }
+        if (this.lastServerSelectedSerial != getMenu().viewSelectedSerial()) {
+            this.lastServerSelectedSerial = getMenu().viewSelectedSerial();
+            this.selectedSerial = this.lastServerSelectedSerial;
+        }
+        if (this.lastServerSearchScope != getMenu().viewSearchScope()) {
+            this.lastServerSearchScope = getMenu().viewSearchScope();
+            this.searchScope = this.lastServerSearchScope;
+            if (this.contentSearchScopeButton != null) {
+                this.contentSearchScopeButton.setScope(this.searchScope);
+            }
+        }
+        // 「附加排序」开关：服务端值变了就跟随（开屏恢复）；没变而本地与它不同，说明是玩家刚点的，回传。
+        if (this.lastServerNaturalSort != getMenu().viewNaturalSort()) {
+            this.lastServerNaturalSort = getMenu().viewNaturalSort();
+            if (this.naturalSortButton != null) {
+                this.naturalSortButton.setEnabled(this.lastServerNaturalSort);
+            }
+        } else if (this.naturalSortButton != null
+                && this.naturalSortButton.isEnabled() != this.lastServerNaturalSort) {
+            getMenu().sendViewStateToServer(this.hideEmptySlots, this.selectedSerial, this.searchScope,
+                    this.naturalSortButton.isEnabled());
+        }
         syncScrollbar();
         rebuildRows();
         syncScrollbar();
@@ -754,6 +780,46 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
      * 所以任何类型的产物都能直接显示；它也自带缓存，逐帧调用不会反复解码。该方法在“解出的样板报告零产出”
      * 时会在内部越界，而渲染路径不能因此炸掉整帧，所以在边界收口一次。</p>
      */
+    /**
+     * 样板是否匹配顶部内容搜索栏的文本；范围决定只看产物、只看输入，还是两边都看。
+     *
+     * <p>产物侧直接用格子显示的那个栈（与排序同一口径，流体等非物品产出也覆盖）；输入侧走 AE2 的样板解码，
+     * 解不出的坏样板只在产物侧参与匹配，不让它把整帧弄崩。</p>
+     */
+    private boolean patternMatchesContentSearch(ItemStack pattern) {
+        if (this.contentSearchText == null || this.contentSearchText.isBlank()) {
+            return true;
+        }
+        var needle = this.contentSearchText.trim().toLowerCase(java.util.Locale.ROOT);
+        var scope = this.searchScope;
+        var onlyInput = scope == io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope.INPUT;
+        var onlyOutput = scope == io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope.OUTPUT;
+        if (!onlyInput && displayedItemName(pattern).toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+            return true;
+        }
+        if (onlyOutput) {
+            return false;
+        }
+        var level = net.minecraft.client.Minecraft.getInstance().level;
+        if (level == null) {
+            return false;
+        }
+        var details = appeng.api.crafting.PatternDetailsHelper.decodePattern(pattern, level);
+        if (details == null) {
+            return false;
+        }
+        for (var input : details.getInputs()) {
+            for (var possible : input.getPossibleInputs()) {
+                if (possible != null && possible.what() != null
+                        && possible.what().getDisplayName().getString().toLowerCase(java.util.Locale.ROOT)
+                                .contains(needle)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static ItemStack patternOutputOf(ItemStack pattern) {
         if (!(pattern.getItem() instanceof appeng.crafting.pattern.EncodedPatternItem encodedPattern)) {
             return ItemStack.EMPTY;
@@ -807,6 +873,8 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
                 onDiskRightClick(index);
             } else if (btn == 1) {
                 this.selectedSerial = this.selectedSerial == disk.serial() ? 0 : disk.serial();
+        getMenu().sendViewStateToServer(this.hideEmptySlots, this.selectedSerial, this.searchScope,
+                naturalSortEnabled());
             } else if (btn == 2) {
                 onDiskMiddleClick(index);
             }
@@ -1096,14 +1164,20 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
         var dir = getSortDir();
         boolean natural = naturalSortEnabled();
         var cached = displayOrders.get(serial);
-        if (cached != null && cached.stillMatches(contents, order, dir, natural)) {
+        if (cached != null && cached.stillMatches(contents, order, dir, natural, this.contentSearchText,
+                this.searchScope)) {
             return cached.storageIndexes();
         }
 
-        var indexes = new Integer[contents.size()];
-        for (int i = 0; i < indexes.length; i++) {
-            indexes[i] = i;
+        // 内容搜索：不匹配的样板不进显示序（行数、命中、取件因此都自动按筛选后的结果走）。
+        var matched = new java.util.ArrayList<Integer>(contents.size());
+        for (int i = 0; i < contents.size(); i++) {
+            if (patternMatchesContentSearch(contents.get(i))) {
+                matched.add(i);
+            }
         }
+
+        var indexes = matched.toArray(new Integer[0]);
         var comparator = patternComparator(order, dir, natural);
         // 排序号而不是排堆：n log n，且不丢“显示位次 ↔ 存储序号”的对应（满盘 1024 张也不会在帧里抖）。
         Arrays.sort(indexes, (left, right) -> comparator.compare(contents.get(left), contents.get(right)));
@@ -1113,7 +1187,8 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
             storageIndexes[i] = indexes[i];
         }
 
-        displayOrders.put(serial, new DisplayOrder(contents, order, dir, natural, storageIndexes));
+        displayOrders.put(serial, new DisplayOrder(contents, order, dir, natural, this.contentSearchText,
+                this.searchScope, storageIndexes));
         return storageIndexes;
     }
 

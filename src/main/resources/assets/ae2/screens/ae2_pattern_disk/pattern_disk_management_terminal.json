@@ -315,6 +315,17 @@
    "width": 66,
    "height": 12
   },
+  "contentSearch": {
+   "$comment": "新建的样板内容搜索栏：顶部居中、与 miniSearch 同一行（top 4），搜索范围由右侧的 contentSearchScope 轮换。",
+   "left": 137,
+   "top": 4,
+   "width": 66,
+   "height": 12
+  },
+  "contentSearchScope": {
+   "left": 205,
+   "top": 5
+  },
   "search": {
    "left": 1000,
    "top": -1000
