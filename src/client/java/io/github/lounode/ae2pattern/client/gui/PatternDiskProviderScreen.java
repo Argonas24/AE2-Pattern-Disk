@@ -11,6 +11,7 @@ import guideme.PageAnchor;
 import appeng.api.config.LockCraftingMode;
 import appeng.api.config.Settings;
 import appeng.api.config.YesNo;
+import appeng.api.upgrades.IUpgradeableObject;
 import appeng.api.upgrades.Upgrades;
 import appeng.client.gui.AEBaseScreen;
 import appeng.client.gui.Icon;
@@ -20,6 +21,7 @@ import appeng.client.gui.style.StyleManager;
 import appeng.client.gui.widgets.ServerSettingToggleButton;
 import appeng.client.gui.widgets.SettingToggleButton;
 import appeng.client.gui.widgets.ToggleButton;
+import appeng.client.gui.widgets.UpgradesPanel;
 import appeng.core.localization.GuiText;
 import appeng.core.network.ServerboundPacket;
 import appeng.core.network.serverbound.ConfigButtonPacket;
@@ -52,8 +54,17 @@ public class PatternDiskProviderScreen extends AEBaseScreen<PatternDiskProviderM
             .src(240, 16, 16, 16);
 
     public PatternDiskProviderScreen(PatternDiskProviderMenu menu, Inventory playerInventory, Component title) {
-        super(menu, playerInventory, title,
+        this(menu, playerInventory, title,
                 StyleManager.loadStyleDoc("/screens/ae2_pattern_disk/pattern_disk_provider.json"));
+    }
+
+    /**
+     * 同一套布局、换一份文档：派生设备（自装配样板磁盘供应器）的字样挂在布局文档里，所以它用这里传进来的
+     * 那份文档开屏。构造之后的一切都与本类共用。
+     */
+    public PatternDiskProviderScreen(PatternDiskProviderMenu menu, Inventory playerInventory, Component title,
+            ScreenStyle style) {
+        super(menu, playerInventory, title, style);
 
         this.blockingModeButton = new ServerSettingToggleButton<>(Settings.BLOCKING_MODE, YesNo.NO);
         this.addToLeftToolbar(this.blockingModeButton);
@@ -76,6 +87,27 @@ public class PatternDiskProviderScreen extends AEBaseScreen<PatternDiskProviderM
 
         this.lockReason = new LockReasonWidget(menu);
         this.widgets.add("lockReason", this.lockReason);
+
+        // 升级面板：槽位由它按 AE2 的规矩摆在对话框右侧外沿并画底框（界面上那几个 UPGRADE 槽的定位归它管，
+        // 界面文档里那份坐标只是冗余）。没有升级槽的机器不挂——ME 样板磁盘供应器就是那种，挂上去只会
+        // 留下一块空的命中区。
+        var upgradeSlots = menu.getSlots(SlotSemantics.UPGRADE);
+        if (!upgradeSlots.isEmpty()) {
+            this.widgets.add("upgrades", new UpgradesPanel(upgradeSlots, this::getCompatibleUpgrades));
+        }
+    }
+
+    /**
+     * 「可用升级」提示：这台设备能装哪些卡（AE2 速度卡、AE2 Crystal Science 的陨石超频卡），鼠标悬在升级
+     * 面板上时显示。
+     */
+    private List<Component> getCompatibleUpgrades() {
+        var lines = new ArrayList<Component>();
+        if (menu.getProvider() instanceof IUpgradeableObject upgradeable) {
+            lines.add(GuiText.CompatibleUpgrades.text());
+            lines.addAll(Upgrades.getTooltipLinesForMachine(upgradeable.getUpgrades().getUpgradableItem()));
+        }
+        return lines;
     }
 
     @Override

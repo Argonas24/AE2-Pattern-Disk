@@ -78,12 +78,47 @@ public class AE2PatternDiskClient {
 
     private void registerScreens(RegisterMenuScreensEvent event) {
         event.register(AEPatternRegistries.MENU_TRANSFERER.get(), PatternTransfererScreen::new);
-        event.register(AEPatternRegistries.MENU_PROVIDER.get(), PatternDiskProviderScreen::new);
+        // 屏幕类多了一个接受布局文档的构造，方法引用不再能唯一定位，所以这里把两个泛型参数写实。
+        event.register(AEPatternRegistries.MENU_PROVIDER.get(),
+                new net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<
+                        io.github.lounode.ae2pattern.common.menu.PatternDiskProviderMenu, PatternDiskProviderScreen>() {
+                    @Override
+                    public PatternDiskProviderScreen create(
+                            io.github.lounode.ae2pattern.common.menu.PatternDiskProviderMenu menu,
+                            net.minecraft.world.entity.player.Inventory playerInventory,
+                            net.minecraft.network.chat.Component title) {
+                        return new PatternDiskProviderScreen(menu, playerInventory, title);
+                    }
+                });
         event.register(AEPatternRegistries.MENU_ASSEMBLER.get(), PatternDiskAssemblerScreen::new);
         event.register(AEPatternRegistries.MENU_BATCH_ASSEMBLER.get(), BatchAssemblerScreen::new);
         registerEncodingTerminalScreen(event);
         registerManagementTerminalScreen(event);
         registerWirelessTerminalScreens(event);
+        registerMeteoriteProviderScreen(event);
+    }
+
+    /**
+     * 自装配样板磁盘供应器的屏幕：与样板磁盘供应器同一个屏幕类、同一份槽位布局，只换布局文档（设备字样写在
+     * 文档里）。未装 AE2 Crystal Science 时它不存在，这里安静跳过。
+     */
+    private void registerMeteoriteProviderScreen(RegisterMenuScreensEvent event) {
+        if (!io.github.lounode.ae2pattern.MeteoritePatternProviderRegistrations.isRegistered()) {
+            return;
+        }
+        event.register(io.github.lounode.ae2pattern.MeteoritePatternProviderRegistrations.MENU.get(),
+                new net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<
+                        io.github.lounode.ae2pattern.common.menu.PatternDiskProviderMenu, PatternDiskProviderScreen>() {
+                    @Override
+                    public PatternDiskProviderScreen create(
+                            io.github.lounode.ae2pattern.common.menu.PatternDiskProviderMenu menu,
+                            net.minecraft.world.entity.player.Inventory playerInventory,
+                            net.minecraft.network.chat.Component title) {
+                        return new PatternDiskProviderScreen(menu, playerInventory, title,
+                                StyleManager.loadStyleDoc(
+                                        "/screens/ae2_pattern_disk/meteorite_pattern_provider.json"));
+                    }
+                });
     }
 
     /**

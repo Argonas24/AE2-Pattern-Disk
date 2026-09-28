@@ -23,9 +23,11 @@
 - ✅ 性能：`CraftUnit.craftingInv` 持久缓存；`pushOut` 相邻+网络双通道
 - ✅ GUI：`PatternDiskAssemblerMenu` + `assets/ae2/screens/ae2_pattern_disk/pattern_disk_assembler.json` 布局（AE2 风格 + 本地底图）+ lang
 
-### 4. AECS 自装配式样板供应器兼容 — ✅（PR #75）
-- AECS 补丁：`DisksMeteoritePatternProviderLogic`（一槽二用 + ModList 门控 + Codec 契约）+ BE + 菜单 `DiskAwarePatternSlot`
-- PR：https://github.com/ExtremelyFrozen/AE2-Crystal-Science/pull/75
+### 4. 自装配样板磁盘供应器 — ✅（AEPD 侧自持实现）
+- 定稿方案：AEPD 复制 AECS 的自装配核心（不建跨 mod API、不编译期引用 AECS 类型），设备以 `ae2cs` 在场为注册前提
+- 落地：`MeteoritePatternProviderBlock` / `BlockEntity` / `SelfAssemblingPatternDiskProviderLogic` / `Menu` + `integration.ae2cs.AecsSoftDep`；
+  GUI 复用 `pattern_disk_provider` 布局并挂 `UpgradesPanel`（升级槽随之显现）
+- 原「在 AECS 内做磁盘兼容层」的两条 PR 已关闭（方向相反）：#75 一槽二用、#83 全面支持 + 依赖解耦
 
 ### 5. 存储性能（策略二：静态全量解析）— ✅
 - ✅ 磁盘内容指纹缓存：内容未变→短路跳过全量重建（`refreshPatternsFromDisks`）
@@ -35,7 +37,7 @@
 
 ### 6. AE2WTLib 前置补齐 — ✅
 - AECS 1.2.x 依赖 `de.mari_023:ae2wtlib`；dev 环境补齐 19.5.0 + `ae2wtlib_api`
-- ✅ 启动自验通过（AE2 0.1.1 + AECS 1.2.2 + AE2WTLib 均加载，无崩溃）
+- 启动自验：1.2.2 时代通过一次；依赖已换 1.3.0（`libs/ae2cs-1.21.1-1.3.0.jar`，取自 `1.21.1-main`，即 PR#82 的 head），该组合**尚未重跑自验**
 
 ## 二、已放弃 / 暂缓
 

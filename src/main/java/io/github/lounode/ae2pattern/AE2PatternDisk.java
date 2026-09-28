@@ -19,8 +19,10 @@ import io.github.lounode.ae2pattern.common.menu.PatternDiskManagementTermMenu;
 import io.github.lounode.ae2pattern.config.AEPDConfig;
 
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskAssemblerBlockEntity;
+import io.github.lounode.ae2pattern.common.block.entity.MeteoritePatternProviderBlockEntity;
 import io.github.lounode.ae2pattern.common.block.entity.PatternDiskProviderBlockEntity;
 import io.github.lounode.ae2pattern.common.block.entity.PatternTransfererBlockEntity;
+import io.github.lounode.ae2pattern.integration.ae2cs.AecsSoftDep;
 
 /**
  * Entry point for the AE2 Pattern Disk addon.
@@ -36,6 +38,12 @@ public class AE2PatternDisk {
 
         // Registration entry points
         AEPatternRegistries.register(modBus);
+
+        // 自装配样板磁盘供应器：整套注册以 AE2 Crystal Science 在场为前提，不在场时这台设备在游戏里不存在。
+        // 判定放在这里而不是静态字段上，是因为 ModList 要到 mod 构造期才可读。
+        if (AecsSoftDep.isLoaded()) {
+            MeteoritePatternProviderRegistrations.register(modBus);
+        }
 
         modBus.addListener(this::associateBlockEntities);
         modBus.addListener(this::commonSetup);
@@ -75,6 +83,18 @@ public class AE2PatternDisk {
                 appeng.api.AECapabilities.GENERIC_INTERNAL_INV,
                 AEPatternRegistries.BE_PROVIDER.get(),
                 (be, dir) -> PatternDiskProviderBlockEntity.class.cast(be).getLogic().getReturnInv());
+
+        // 自装配样板磁盘供应器：它同样要能从网上被找到，并把返回仓露给分子装配台回送产物。
+        if (MeteoritePatternProviderRegistrations.isRegistered()) {
+            event.registerBlockEntity(
+                    appeng.api.AECapabilities.IN_WORLD_GRID_NODE_HOST,
+                    MeteoritePatternProviderRegistrations.BE.get(),
+                    (be, dir) -> (appeng.api.networking.IInWorldGridNodeHost) be);
+            event.registerBlockEntity(
+                    appeng.api.AECapabilities.GENERIC_INTERNAL_INV,
+                    MeteoritePatternProviderRegistrations.BE.get(),
+                    (be, dir) -> MeteoritePatternProviderBlockEntity.class.cast(be).getLogic().getReturnInv());
+        }
 
         // Crafting machine: exposes the assembler so any AE2 provider can push patterns to it.
         event.registerBlockEntity(
@@ -149,6 +169,14 @@ public class AE2PatternDisk {
                     AEPatternRegistries.BE_BATCH_ASSEMBLER.get(),
                     null,
                     null);
+
+            if (MeteoritePatternProviderRegistrations.isRegistered()) {
+                MeteoritePatternProviderRegistrations.BLOCK.get().setBlockEntity(
+                        MeteoritePatternProviderBlockEntity.class,
+                        MeteoritePatternProviderRegistrations.BE.get(),
+                        null,
+                        (lvl, p, st, be) -> ((appeng.blockentity.ServerTickingBlockEntity) be).serverTick());
+            }
         }
     }
 
@@ -212,6 +240,19 @@ public class AE2PatternDisk {
                 .get(net.minecraft.resources.ResourceLocation.parse("ae2_pattern_disk:batch_molecular_assembler"));
         if (batchAssembler != null && speedCard != null) {
             appeng.api.upgrades.Upgrades.add(speedCard, batchAssembler, 4);
+        }
+
+        // 自装配样板磁盘供应器：速度卡按 AE2 的规矩上；陨石超频卡是 AE2 Crystal Science 的升级件，得由本模组
+        // 把它挂到自己的方块上（那张卡不知道这台设备），所以这里按 id 取来登记，取不到就只留速度卡那一条。
+        if (MeteoritePatternProviderRegistrations.isRegistered()) {
+            var meteoriteProvider = MeteoritePatternProviderRegistrations.BLOCK.get();
+            if (speedCard != null) {
+                appeng.api.upgrades.Upgrades.add(speedCard, meteoriteProvider, 4);
+            }
+            var overloadCard = AecsSoftDep.overloadCard();
+            if (overloadCard != null) {
+                appeng.api.upgrades.Upgrades.add(overloadCard, meteoriteProvider, 4);
+            }
         }
     }
 }

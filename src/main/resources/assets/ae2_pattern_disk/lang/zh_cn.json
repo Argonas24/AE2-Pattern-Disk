@@ -130,5 +130,7 @@
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction.all": "全向",
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction.side": "%s面",
   "gui.ae2_pattern_disk.management_terminal.disk_store.disk_gone": "选中的那张样板磁盘已经不在了",
-  "gui.ae2_pattern_disk.management_terminal.disk_store.slot_changed": "那一格里的样板磁盘已经不在原位了"
+  "gui.ae2_pattern_disk.management_terminal.disk_store.slot_changed": "那一格里的样板磁盘已经不在原位了",
+  "block.ae2_pattern_disk.meteorite_pattern_provider": "自装配样板磁盘供应器",
+  "gui.ae2_pattern_disk.meteorite_pattern_provider": "自装配样板磁盘供应器"
 }

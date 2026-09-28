@@ -35,7 +35,9 @@ import io.github.lounode.ae2pattern.AEPatternRegistries;
 public class PatternDiskProviderMenu extends AEBaseMenu {
 
     public static final MenuType<PatternDiskProviderMenu> TYPE = MenuTypeBuilder
-            .create(PatternDiskProviderMenu::new, PatternDiskProviderHost.class)
+            // 显式三参 lambda：父类还有一个接受 MenuType 的受保护构造，方法引用会同时匹配两种工厂形状。
+            .create((id, playerInventory, host) -> new PatternDiskProviderMenu(id, playerInventory, host),
+                    PatternDiskProviderHost.class)
             .buildUnregistered(
                     net.minecraft.resources.ResourceLocation.parse("ae2_pattern_disk:pattern_disk_provider"));
 
@@ -53,7 +55,16 @@ public class PatternDiskProviderMenu extends AEBaseMenu {
     public GenericStack unlockStack = null;
 
     public PatternDiskProviderMenu(int id, Inventory playerInv, PatternDiskProviderHost host) {
-        super(TYPE, id, playerInv, host);
+        this(TYPE, id, playerInv, host);
+    }
+
+    /**
+     * 供子类用自己的菜单类型打开同一套槽位。类型参数放宽到通配，是因为子类那份菜单类型带的是子类类型——
+     * 共享的是布局，不是类型本身。
+     */
+    protected PatternDiskProviderMenu(MenuType<? extends PatternDiskProviderMenu> menuType, int id,
+                                      Inventory playerInv, PatternDiskProviderHost host) {
+        super(menuType, id, playerInv, host);
         this.host = host;
 
         var logic = host.getLogic();

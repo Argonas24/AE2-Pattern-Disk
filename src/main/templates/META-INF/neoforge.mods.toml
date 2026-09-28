@@ -94,10 +94,12 @@ versionRange="*"
 ordering="AFTER"
 side="CLIENT"
 
-# AE2 Crystal Science is optional, and the relationship runs the other way: it is the one calling into our
-# PatternDiskApi (its own metadata does not declare us), so this entry only says the two are meant to ship
-# together - no version bound of our own, same reasoning ExtendedAE Plus uses for `extendedae`. BEFORE keeps
-# us loaded first, so a consumer that touches our API during its setup does not race our own construction.
+# AE2 Crystal Science is optional, and we do not compile against it: the self-assembling pattern disk
+# provider registers only while that mod is present, so a pack without it simply has no such device. The
+# relationship is otherwise by mod id alone - its overload card is looked up in the item registry at runtime
+# (see AecsSoftDep), never referenced as a class - so no version bound of our own is needed, same reasoning
+# ExtendedAE Plus uses for `extendedae`. BEFORE keeps us loaded first, so our setup-time presence probe does
+# not race its construction.
 [[dependencies.${mod_id}]]
 modId="ae2cs"
 type="optional"

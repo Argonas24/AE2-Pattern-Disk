@@ -130,5 +130,7 @@
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction.all": "omnidirectional",
   "gui.ae2_pattern_disk.pattern_disk_provider.push_direction.side": "%s side",
   "gui.ae2_pattern_disk.management_terminal.disk_store.disk_gone": "The selected pattern disk is gone",
-  "gui.ae2_pattern_disk.management_terminal.disk_store.slot_changed": "That pattern disk is no longer in that inventory slot"
+  "gui.ae2_pattern_disk.management_terminal.disk_store.slot_changed": "That pattern disk is no longer in that inventory slot",
+  "block.ae2_pattern_disk.meteorite_pattern_provider": "Meteorite Pattern Disk Provider",
+  "gui.ae2_pattern_disk.meteorite_pattern_provider": "Meteorite Pattern Disk Provider"
 }
