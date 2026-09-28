@@ -121,24 +121,39 @@ public final class AEPatternRegistries {
      * 差菜单类型，所以共用同一个物品类。
      */
     /**
-     * 先造实例、再交给注册表：AE2WTLib 登记无线终端时要的是物品实例，而它的时机在自己那侧的 ITEM
-     * RegisterEvent 里——那一刻 DeferredItem 还没绑定（读它会抛 NPE），所以回调里只能喂即时实例。
-     * 注册用的 supplier 返回同一个实例，注册结果与平时一致。
+     * 两个无线物品的实例：<b>懒创建</b>。
+     *
+     * <p>{@code Item} 的构造器会往物品注册表写一个 intrusive holder，而那只允许在注册表「正在注册」时
+     * 进行——mod 构造期注册表已经冻结，在那里 {@code new} 会抛 {@code IllegalStateException: Registry is
+     * already frozen}（一次实机启动即此）。物品注册的 supplier 与 AE2WTLib 的登记回调都在 ITEM 的
+     * RegisterEvent 里跑到（{@code AE2wtlibAPIEntrypoint} 就是在那个事件里调 {@code AddTerminalEvent.run()}），
+     * 那时注册表是开放的，所以两条路都从这里取：谁先跑到，谁就把实例造出来，另一个拿到同一个。
+     *
+     * <p>物品属性由 AE2WTLib 的 {@code ItemWT} 定死，注册时那个 {@code Properties} 参数用不上；两个物品
+     * 只差菜单类型，所以共用同一个物品类。</p>
      */
-    public static final WirelessPatternDiskTerminalItem WIRELESS_PATTERN_DISK_ENCODING_TERMINAL = new WirelessPatternDiskTerminalItem(
-            PatternDiskWirelessEncodingTermMenu.TYPE);
+    private static WirelessPatternDiskTerminalItem wirelessEncodingItem;
+    private static WirelessPatternDiskTerminalItem wirelessManagementItem;
 
-    public static final WirelessPatternDiskTerminalItem WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL = new WirelessPatternDiskTerminalItem(
-            PatternDiskWirelessManagementTermMenu.TYPE);
+    public static WirelessPatternDiskTerminalItem wirelessEncodingItem() {
+        if (wirelessEncodingItem == null) {
+            wirelessEncodingItem = new WirelessPatternDiskTerminalItem(PatternDiskWirelessEncodingTermMenu.TYPE);
+        }
+        return wirelessEncodingItem;
+    }
 
-    /** 注册表里的把手；物品实例就是上面那两个。 */
+    public static WirelessPatternDiskTerminalItem wirelessManagementItem() {
+        if (wirelessManagementItem == null) {
+            wirelessManagementItem = new WirelessPatternDiskTerminalItem(PatternDiskWirelessManagementTermMenu.TYPE);
+        }
+        return wirelessManagementItem;
+    }
+
     public static final DeferredItem<WirelessPatternDiskTerminalItem> ITEM_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL = ITEMS
-            .registerItem("wireless_pattern_disk_encoding_terminal",
-                    props -> WIRELESS_PATTERN_DISK_ENCODING_TERMINAL);
+            .registerItem("wireless_pattern_disk_encoding_terminal", props -> wirelessEncodingItem());
 
     public static final DeferredItem<WirelessPatternDiskTerminalItem> ITEM_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL = ITEMS
-            .registerItem("wireless_pattern_disk_management_terminal",
-                    props -> WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL);
+            .registerItem("wireless_pattern_disk_management_terminal", props -> wirelessManagementItem());
 
     /** Reference to AE2's blank pattern, exposed for the transferer's network return. */
     public static ItemStack blankPattern() {
@@ -311,6 +326,10 @@ public final class AEPatternRegistries {
                         output.accept(ITEM_CABLE_PATTERN_DISK_PROVIDER.get());
                         output.accept(ITEM_WIRELESS_PATTERN_DISK_ENCODING_TERMINAL.get());
                         output.accept(ITEM_WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL.get());
+                        // 自装配样板磁盘供应器只在 AE2 Crystal Science 在场时注册，创造页跟着它出现。
+                        if (MeteoritePatternProviderRegistrations.isRegistered()) {
+                            output.accept(MeteoritePatternProviderRegistrations.ITEM.get());
+                        }
                     })
                     .build());
 
@@ -382,22 +401,22 @@ public final class AEPatternRegistries {
     }
 
     /**
-     * 把两个无线终端登记进 AE2WTLib：终端名、宿主工厂、菜单类型、物品、图标。登记只是把回调交出去，真正的
-     * 实例化在 AE2WTLib 自己的初始化阶段（它遍历这份名单填通用无线终端的选择列表与热键），所以这里取
-     * {@code get()} 是安全的。
+     * 把两个无线终端登记进 AE2WTLib：终端名、宿主工厂、菜单类型、物品、图标。这个回调由 AE2WTLib 在 ITEM
+     * 的 RegisterEvent 里执行（那时注册表开放，物品实例才能造出来，见 {@link #wirelessEncodingItem()}），
+     * 所以这里拿到的实例与注册进注册表的是同一个。
      */
     private static void registerWirelessTerminals() {
         de.mari_023.ae2wtlib.api.registration.AddTerminalEvent.register(event -> {
             event.builder("pattern_disk_encoding_terminal",
                     io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost::new,
                     PatternDiskWirelessEncodingTermMenu.TYPE,
-                    WIRELESS_PATTERN_DISK_ENCODING_TERMINAL,
+                    wirelessEncodingItem(),
                     de.mari_023.ae2wtlib.api.gui.Icon.PATTERN_ENCODING)
                     .addTerminal();
             event.builder("pattern_disk_management_terminal",
                     io.github.lounode.ae2pattern.common.menu.WirelessPatternDiskTerminalHost::new,
                     PatternDiskWirelessManagementTermMenu.TYPE,
-                    WIRELESS_PATTERN_DISK_MANAGEMENT_TERMINAL,
+                    wirelessManagementItem(),
                     de.mari_023.ae2wtlib.api.gui.Icon.PATTERN_ACCESS)
                     .addTerminal();
         });
