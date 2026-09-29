@@ -132,6 +132,48 @@
 - **验证**：P0 用单 tick 耗时监控（不超 50ms 预算）+ 极大 chunk 模拟测试；P1/P2 需回归 NeoECO 路径行为不变。
 - **关联**：P2 的 long 收益依赖万象构序适配（见条目 I，当前 ⏸）。
 
+#### 需求落地补充（2026-09）：把两条需求转成可验收指标
+
+需求原文：① 极大数的合成不会出现性能瓶颈；② 兼容性良好。两者都不是可测陈述，下面全部转成可验收形式。
+
+| 需求 | 可验收指标 |
+|---|---|
+| ① 无性能瓶颈 | 单 tick 耗时与订单份数**解耦**：任意份数下逐份阶段的单 tick 成本有**常量上界**（默认 64 份 ≈ 3ms），tick 峰值不超 50ms 预算 |
+| ① 无性能瓶颈 | 订单份数从 1e5 变到 1e9，单 tick 处理量**恒定**（不随 `remaining` 增长，也不随之下降） |
+| ① 无性能瓶颈 | 摊销路径仍为 O(1)：一份与 1e9 份单 tick 成本同阶，不得退回逐份 |
+| ② 兼容性良好 | NeoECO 路径行为逐项不变（`eco$getAvailableParallelSlots` 仍返回 int，交接语义不变） |
+| ② 兼容性良好 | 不引入 mixin、不新增硬依赖；未设系统属性时默认值安全 |
+| ② 兼容性良好 | 接近 `Long.MAX_VALUE` 的输入不崩溃、不截断、不丢数据、不复制 |
+
+**兼容性矩阵**（“兼容性良好”逐维度拆开，每维一条保障）：
+
+| 维度 | 保障措施 |
+|---|---|
+| NeoECO | adapter 签名保持 int；批量交接语义与现在逐条对齐 |
+| 万象构序 | 维持现状不接；将来接需走 P2 条件 mixin（见条目 I） |
+| AE2 | 仅用公共 API；全库无 CPU Mixin（`CraftingCpuLogic` 零引用） |
+| 第三方附属 | 无 mixin、无反射新增、无新增硬依赖 |
+| 配置 | 新增参数默认值保守（不改变现有手感）；照 `logEffectiveTuning` 模式记录被覆盖的值 |
+| 存档 | NBT 格式不变（`cachedSlots`/`assembled` 均为运行时缓存，不参与序列化） |
+
+**风险与回退**：
+
+| 风险 | 缓解 |
+|---|---|
+| 预算过小 → 大订单跳多 tick，手感变慢 | 可配置；默认量级与既有 `OUTPUT_RETURN_TICKS` 平滑逻辑一致 |
+| 预算过大 → 慢机器仍卡 | 叠加时间预算兜底（P0 的备选项） |
+| long 化引入行为回归 | 逐项对拍 NeoECO 路径；保留 int 版查询方法 |
+| 拆堆保护影响掉落完整性 | 分批掉落而非丢弃 |
+
+**验收清单（DoD）**：① 1e9 份订单单 tick 峰值 ≤ 50ms；② 单 tick 处理量与份数解耦；③ NeoECO 批量交接回归通过；④ 极端值不溢出/不截断；⑤ `compileJava` + `compileClientJava` 通过；⑥ 数据完整性（无丢失/复制）。
+
+#### 可用范本：项目内已有的两处预算控制
+
+P0 不应新造范式，同文件里已有两处“每 tick 限量”的先例，照抄即可：
+
+- `drainOutputs`（`:1387`）：`rate = 总量 / OUTPUT_RETURN_TICKS`，每 tick 只回送一份额度；
+- 同类思路还体现在 `shortRunStreak` / `IDLE_RESET_WINDOWS` 的窗口退避上。
+
 ## 四、执行约束
 - 目标：NeoForge 21.1.241 / MC 1.21.1 / JDK 21 / AE2 19.2.17（编译依赖口径；`gradle.properties` 中的 `ae2_version=19.2.8` 为未使用的历史键）
 - 只用 AE2 公共 API；机器美术资源统一放本项目 `assets/ae2_pattern_disk/textures/`，不直接引用 `ae2:` 纹理（借用的复制件见 README 授权表；零件/物品显示模型仍继承 `ae2:item/display_base`、`ae2:part/display_off`、`ae2:item/cable_interface`）
