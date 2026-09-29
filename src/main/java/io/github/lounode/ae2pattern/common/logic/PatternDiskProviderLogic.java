@@ -13,6 +13,7 @@ import appeng.helpers.patternprovider.PatternProviderLogicHost;
 import appeng.util.inv.AppEngInternalInventory;
 
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
+import io.github.lounode.ae2pattern.common.pattern.PatternDiskTier;
 import io.github.lounode.ae2pattern.api.PatternDiskContents;
 
 /**
@@ -42,10 +43,33 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
     private List<Object> lastDiskState;
 
     public PatternDiskProviderLogic(IManagedGridNode mainNode, PatternProviderLogicHost host,
-            Supplier<AppEngInternalInventory> diskInventorySupplier) {
-        super(mainNode, host, 1024);
+            int diskSlots, Supplier<AppEngInternalInventory> diskInventorySupplier) {
+        super(mainNode, host, mirrorCapacity(diskSlots));
         this.diskInventorySupplier = diskInventorySupplier;
         this.lastDiskState = null;
+    }
+
+    /**
+     * How many slots the mirror needs: every disk slot the machine has, times the largest disk tier.
+     *
+     * <p>Derived rather than fixed, because a fixed number has to be right for every machine and every
+     * tier at once. The one that used to be here - 1024 - was exactly one full disk, so a provider
+     * holding nine of them exposed only the first and silently dropped the rest.</p>
+     *
+     * <p>The slot count is a parameter rather than a read of the disk inventory: this logic is built
+     * inside the host's own {@code super()} constructor, before that inventory field exists.</p>
+     *
+     * <p>The upper bound comes from this mod's own tiers, which is what these machines' disks can hold -
+     * every write path in the mod clamps to a tier capacity. A component edited out of band to claim more
+     * than the largest tier would not be covered; covering that would mean deriving the bound from the
+     * disks at runtime, and this constructor runs before the disks can be read.</p>
+     */
+    private static int mirrorCapacity(int diskSlots) {
+        int perDisk = 0;
+        for (PatternDiskTier tier : PatternDiskTier.values()) {
+            perDisk = Math.max(perDisk, tier.capacity());
+        }
+        return diskSlots * perDisk;
     }
 
     /**
@@ -58,13 +82,22 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
      * repattern) rebuilds fresh in one pass.</p>
      */
     public boolean refreshPatternsFromDisks() {
+        return refreshPatternsFromDisks(false);
+    }
+
+    /**
+     * @param force rebuild even when the disks look unchanged. The mirror can be rewritten from under us
+     *              while the disks stay where they are - importing a memory card clears it and then lets
+     *              AE2 write into it - and the state check cannot see that, so those callers pass true.
+     */
+    public boolean refreshPatternsFromDisks(boolean force) {
         var diskInventory = diskInventorySupplier.get();
         if (diskInventory == null) {
             return false;
         }
 
         var state = diskState(diskInventory);
-        if (sameState(lastDiskState, state)) {
+        if (!force && sameState(lastDiskState, state)) {
             return false; // unchanged: coalesce, skip full rebuild
         }
 
@@ -83,11 +116,16 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
             all.addAll(contents.patterns());
         }
 
-        patternInv.clear();
-        for (int i = 0; i < all.size() && i < patternInv.size(); i++) {
-            // copy(): the stacks come straight out of the disks' components, and a holder of the mirror
-            // must not be able to mutate what the disk shows.
-            patternInv.setItemDirect(i, all.get(i).copy());
+        rebuildingMirror = true;
+        try {
+            patternInv.clear();
+            for (int i = 0; i < all.size() && i < patternInv.size(); i++) {
+                // copy(): the stacks come straight out of the disks' components, and a holder of the mirror
+                // must not be able to mutate what the disk shows.
+                patternInv.setItemDirect(i, all.get(i).copy());
+            }
+        } finally {
+            rebuildingMirror = false;
         }
 
         // Parent decodes patternInventory into its patterns list and requests a grid update.
@@ -150,5 +188,48 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
     @Override
     public void updatePatterns() {
         super.updatePatterns();
+    }
+
+    /**
+     * True while {@link #refreshPatternsFromDisks} is rewriting the mirror.
+     *
+     * <p>Every write into the mirror notifies the host, and the host's answer is a full
+     * {@code updatePatterns()} - which walks every slot and decodes every pattern. Left alone, one rebuild
+     * runs that once per written pattern instead of once at the end: a nine-disk mirror holds 9216, so that
+     * is thousands of full passes against one. The flag collapses the burst, and the rebuild calls
+     * {@code updatePatterns()} itself once the mirror is whole.</p>
+     */
+    private boolean rebuildingMirror;
+
+    /**
+     * Empties the mirror with a single parent update instead of one per slot.
+     *
+     * <p>{@code clear()} empties slot by slot and every slot notifies, so the plain call this replaces ran
+     * a full {@code updatePatterns()} per slot - over the whole mirror each time. The callers only need the
+     * empty end state, so the burst is collapsed the same way a rebuild collapses it. Only the mirror is
+     * written while that flag is up; the disk inventory is not touched.</p>
+     */
+    public void clearMirror() {
+        InternalInventory patternInv = getPatternInv();
+        if (patternInv == null) {
+            return;
+        }
+        rebuildingMirror = true;
+        try {
+            patternInv.clear();
+        } finally {
+            rebuildingMirror = false;
+        }
+        updatePatterns();
+    }
+
+    @Override
+    public void onChangeInventory(AppEngInternalInventory inv, int slot) {
+        if (rebuildingMirror) {
+            // Keep the parent's change-is-persisted semantics, drop the redundant re-decode.
+            saveChanges();
+            return;
+        }
+        super.onChangeInventory(inv, slot);
     }
 }

@@ -57,7 +57,7 @@ public class PatternDiskProviderBlockEntity extends PatternProviderBlockEntity
     protected PatternProviderLogic createLogic() {
         // Lazy supplier: the block entity's parent constructor calls createLogic() before the
         // diskInventory field is initialized, so defer its access until refresh time.
-        return new PatternDiskProviderLogic(getMainNode(), this, this::getDiskInventory);
+        return new PatternDiskProviderLogic(getMainNode(), this, DISK_SLOT_COUNT, this::getDiskInventory);
     }
 
     public AppEngInternalInventory getDiskInventory() {
@@ -90,10 +90,34 @@ public class PatternDiskProviderBlockEntity extends PatternProviderBlockEntity
      * PAT's fixed client slot count and crash the server (AE2 limitation).
      */
     public void refreshFromDisks() {
+        refreshFromDisks(false);
+    }
+
+    /**
+     * @param force rebuild even when the disks look unchanged - a memory card import rewrites the mirror
+     *              with the disks still in place, which the state check cannot see
+     */
+    public void refreshFromDisks(boolean force) {
         if (getLogic() instanceof PatternDiskProviderLogic diskLogic) {
-            diskLogic.refreshPatternsFromDisks();
+            diskLogic.refreshPatternsFromDisks(force);
         }
         terminalView.invalidate(); // next terminal opening rebuilds a fresh view
+    }
+
+    /**
+     * Empties the mirror without the per-slot update storm a plain {@code clear()} causes. Both callers
+     * only need the empty end state: the drop path wants the mirror empty, and the import path refills it
+     * with a forced refresh right after.
+     */
+    private void clearMirror() {
+        if (getLogic() instanceof PatternDiskProviderLogic diskLogic) {
+            diskLogic.clearMirror();
+        } else {
+            // Not reachable today, but the failure mode is a copied pattern rather than a slow one: AE2's
+            // addDrops dumps the mirror to the player, so falling back to the plain clear keeps the old
+            // hard guarantee instead of leaving the mirror full.
+            getLogic().getPatternInv().clear();
+        }
     }
 
     @Override
@@ -143,7 +167,7 @@ public class PatternDiskProviderBlockEntity extends PatternProviderBlockEntity
         // push list and the return inventory, but it also dumps the pattern inventory - which here is
         // only a mirror of the disks. Empty the mirror first so the drop is purely the machine's own
         // contents; super.addAdditionalDrops stays uncalled for the same reason.
-        getLogic().getPatternInv().clear();
+        clearMirror();
         getLogic().addDrops(drops);
         // Also clear the injected pattern inventory so nothing stale remains on break.
         clearContent();
@@ -158,11 +182,15 @@ public class PatternDiskProviderBlockEntity extends PatternProviderBlockEntity
     public void importSettings(SettingsFrom mode, DataComponentMap input, @Nullable Player player) {
         var cleanInput = withoutPatterns(input);
         if (mode == SettingsFrom.MEMORY_CARD) {
-            getLogic().getPatternInv().clear(); // mirror, rebuilt below from the disks
+            // The mirror is rewritten by whatever super.importSettings brings in, while the disks stay put -
+            // a change the state check cannot see.
+            clearMirror();
         }
         super.importSettings(mode, cleanInput, player);
         if (mode == SettingsFrom.MEMORY_CARD) {
-            refreshFromDisks();
+            // Force the rebuild: the disks did not move, so the state check would skip and leave the
+            // mirror as super.importSettings left it.
+            refreshFromDisks(true);
         }
     }
 

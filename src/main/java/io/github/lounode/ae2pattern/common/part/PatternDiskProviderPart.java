@@ -100,7 +100,8 @@ public class PatternDiskProviderPart extends AEBasePart
     protected PatternProviderLogic createLogic() {
         // Lazy disk supplier, written the same way as the block entity's: the logic may be constructed
         // before the disk inventory field exists, so it must not touch it during construction.
-        return new PatternDiskProviderLogic(getMainNode(), this, this::getDiskInventory);
+        return new PatternDiskProviderLogic(getMainNode(), this,
+                PatternDiskProviderBlockEntity.DISK_SLOT_COUNT, this::getDiskInventory);
     }
 
     // ---- PatternDiskProviderHost / IPatternDiskHost ---------------------------
@@ -169,10 +170,34 @@ public class PatternDiskProviderPart extends AEBasePart
 
     /** Rebuilds the provider's pattern list from the current disk contents. */
     public void refreshFromDisks() {
+        refreshFromDisks(false);
+    }
+
+    /**
+     * @param force rebuild even when the disks look unchanged - a memory card import rewrites the mirror
+     *              with the disks still in place, which the state check cannot see
+     */
+    public void refreshFromDisks(boolean force) {
         if (logic instanceof PatternDiskProviderLogic diskLogic) {
-            diskLogic.refreshPatternsFromDisks();
+            diskLogic.refreshPatternsFromDisks(force);
         }
         terminalView.invalidate(); // next terminal opening re-scans the disks into a fresh view
+    }
+
+    /**
+     * Empties the mirror without the per-slot update storm a plain {@code clear()} causes. Both callers
+     * only need the empty end state: the drop path wants the mirror empty, and the import path refills it
+     * with a forced refresh right after.
+     */
+    private void clearMirror() {
+        if (logic instanceof PatternDiskProviderLogic diskLogic) {
+            diskLogic.clearMirror();
+        } else {
+            // Not reachable today, but the failure mode is a copied pattern rather than a slow one: AE2's
+            // addDrops dumps the mirror to the player, so falling back to the plain clear keeps the old
+            // hard guarantee instead of leaving the mirror full.
+            logic.getPatternInv().clear();
+        }
     }
 
     /** Invalidates the cached terminal view and persists after a real mutation from a terminal take. */
@@ -250,7 +275,7 @@ public class PatternDiskProviderPart extends AEBasePart
         // AE2's addDrops covers the pending push list and the return inventory, but it also dumps the
         // pattern inventory - for us a mirror of the disks. Empty the mirror first so nothing but the
         // machine's own contents drops.
-        logic.getPatternInv().clear();
+        clearMirror();
         logic.addDrops(drops);
         // The part clears itself because the removal path always drops it: collecting the drops first
         // and wiping afterwards (instead of leaving it to the caller) makes the two idempotent.
@@ -284,13 +309,19 @@ public class PatternDiskProviderPart extends AEBasePart
     public void importSettings(SettingsFrom mode, DataComponentMap input, @Nullable Player player) {
         var cleanInput = withoutPatterns(input);
         if (mode == SettingsFrom.MEMORY_CARD) {
-            logic.getPatternInv().clear(); // mirror, rebuilt below from the disks
+            // The mirror is rewritten by whatever super.importSettings brings in, while the disks stay put -
+            // a change the state check cannot see.
+            clearMirror();
         }
         super.importSettings(mode, cleanInput, player);
 
         if (mode == SettingsFrom.MEMORY_CARD) {
+            // Not redundant with super.importSettings above: this part extends AEBasePart, not AE2's
+            // PatternProviderPart, so the settings never reach the logic on their own.
             logic.importSettings(cleanInput, player);
-            refreshFromDisks();
+            // Force the rebuild: the disks did not move, so the state check would skip and leave the
+            // mirror as super.importSettings left it.
+            refreshFromDisks(true);
         }
     }
 

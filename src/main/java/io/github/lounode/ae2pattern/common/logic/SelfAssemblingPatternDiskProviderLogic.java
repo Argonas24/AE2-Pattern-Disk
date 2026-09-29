@@ -111,8 +111,8 @@ public class SelfAssemblingPatternDiskProviderLogic extends PatternDiskProviderL
     private final ReferenceArrayList<IPatternDetails> outputCacheOrder = new ReferenceArrayList<>(OUTPUT_CACHE_LIMIT + 4);
 
     public SelfAssemblingPatternDiskProviderLogic(IManagedGridNode mainNode, PatternProviderLogicHost host,
-            Supplier<AppEngInternalInventory> diskInventorySupplier) {
-        super(mainNode, host, diskInventorySupplier);
+            int diskSlots, Supplier<AppEngInternalInventory> diskInventorySupplier) {
+        super(mainNode, host, diskSlots, diskInventorySupplier);
         this.mainNode = mainNode;
         this.host = host;
         this.actionSource = new MachineSource(mainNode::getNode);

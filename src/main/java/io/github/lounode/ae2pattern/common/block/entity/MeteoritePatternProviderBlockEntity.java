@@ -27,6 +27,7 @@ import appeng.util.inv.InternalInventoryHost;
 import io.github.lounode.ae2pattern.MeteoritePatternProviderRegistrations;
 import io.github.lounode.ae2pattern.api.PatternDiskApi;
 import io.github.lounode.ae2pattern.api.PatternDiskTerminalView;
+import io.github.lounode.ae2pattern.common.logic.PatternDiskProviderLogic;
 import io.github.lounode.ae2pattern.common.logic.SelfAssemblingPatternDiskProviderLogic;
 
 /**
@@ -60,7 +61,7 @@ public class MeteoritePatternProviderBlockEntity extends PatternProviderBlockEnt
     @Override
     protected PatternProviderLogic createLogic() {
         // 懒取磁盘栏：方块实体的父构造会在这条路径上先跑 createLogic()，那时磁盘栏字段还没赋值。
-        return new SelfAssemblingPatternDiskProviderLogic(getMainNode(), this, this::getDiskInventory);
+        return new SelfAssemblingPatternDiskProviderLogic(getMainNode(), this, DISK_SLOT_COUNT, this::getDiskInventory);
     }
 
     public AppEngInternalInventory getDiskInventory() {
@@ -100,10 +101,30 @@ public class MeteoritePatternProviderBlockEntity extends PatternProviderBlockEnt
      * 自己那份（行数冻结），这里不重新同步它——重同步会把行数顶到终端客户端的固定槽数之上而崩服务端。
      */
     public void refreshFromDisks() {
+        refreshFromDisks(false);
+    }
+
+    /**
+     * @param force 磁盘没动也强制重建——内存卡导入会改写镜像而磁盘原地不动，状态比较看不出这一点
+     */
+    public void refreshFromDisks(boolean force) {
         if (getLogic() instanceof SelfAssemblingPatternDiskProviderLogic diskLogic) {
-            diskLogic.refreshPatternsFromDisks();
+            diskLogic.refreshPatternsFromDisks(force);
         }
         terminalView.invalidate();
+    }
+
+    /**
+     * 清空镜像而不触发逐槽通知——plain {@code clear()} 会每槽一次全量重解析，这里只需要空终态。
+     */
+    private void clearMirror() {
+        if (getLogic() instanceof PatternDiskProviderLogic diskLogic) {
+            diskLogic.clearMirror();
+        } else {
+            // 今天不可达；但万一失配，后果不是变慢而是复制样板——AE2 的 addDrops 会把镜像掉给玩家，
+            // 所以回退到普通清空，保住改动前的硬保证，而不是把镜像留在原地。
+            getLogic().getPatternInv().clear();
+        }
     }
 
     @Override
@@ -145,7 +166,7 @@ public class MeteoritePatternProviderBlockEntity extends PatternProviderBlockEnt
                 drops.add(diskInventory.getStackInSlot(i));
             }
         }
-        getLogic().getPatternInv().clear();
+        clearMirror();
         getLogic().addDrops(drops);
         clearContent();
     }
@@ -158,11 +179,13 @@ public class MeteoritePatternProviderBlockEntity extends PatternProviderBlockEnt
     public void importSettings(SettingsFrom mode, DataComponentMap input, @Nullable Player player) {
         var cleanInput = withoutPatterns(input);
         if (mode == SettingsFrom.MEMORY_CARD) {
-            getLogic().getPatternInv().clear();
+            // 镜像马上会被 super.importSettings 改写，而磁盘没动——状态比较看不出这种变化。
+            clearMirror();
         }
         super.importSettings(mode, cleanInput, player);
         if (mode == SettingsFrom.MEMORY_CARD) {
-            refreshFromDisks();
+            // 必须强制重建：磁盘没动，状态检查会跳过，镜像就停在 super.importSettings 留下的样子。
+            refreshFromDisks(true);
         }
     }
 

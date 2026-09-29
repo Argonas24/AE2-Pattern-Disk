@@ -93,8 +93,11 @@ public final class PatternDiskApi {
      *
      * <p>8 added {@link PatternDiskHostView}, the composition of a host's own rows with its disks' rows, so a
      * host that keeps both does not have to route between them itself.</p>
+     *
+     * <p>9 added {@link #maxPatterns}, so a host's capacity can be measured from the disks it actually
+     * holds instead of assumed from a constant.</p>
      */
-    public static final int API_VERSION = 8;
+    public static final int API_VERSION = 9;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("ae2_pattern_disk.api");
 
@@ -395,5 +398,39 @@ public final class PatternDiskApi {
             }
         }
         return List.copyOf(hosts);
+    }
+
+    /**
+     * How many patterns a host can hold right now: the capacity of every disk in its slots, summed.
+     *
+     * <p>Measured from the disks themselves rather than assumed from a constant. A host is free to hold any
+     * number of slots and any tier in them, so neither the slot count nor the largest tier alone answers
+     * this - a machine with nine 256k disks answers 9216, one with a single 1k disk answers 4. Empty slots
+     * and non-disk items contribute nothing, while a disk counts its full capacity even before anything has
+     * been written to it, so this is present capacity, not a design limit.</p>
+     *
+     * <p>Meant for a host that has to size something of its own from its disks, and for an addon that wants
+     * to report or compare host capacity. It is a snapshot: a disk inserted or swapped afterwards changes
+     * the answer.</p>
+     *
+     * @param host the host to measure; {@code null} answers 0
+     * @return the total capacity of the disks currently in the host's disk slots
+     */
+    public static int maxPatterns(@Nullable IPatternDiskHost host) {
+        if (host == null) {
+            return 0;
+        }
+        var inventory = host.getDiskInventory();
+        if (inventory == null) {
+            return 0;
+        }
+        int total = 0;
+        for (int i = 0; i < inventory.size(); i++) {
+            var contents = contents(inventory.getStackInSlot(i));
+            if (contents != null) {
+                total += contents.capacity();
+            }
+        }
+        return total;
     }
 }
