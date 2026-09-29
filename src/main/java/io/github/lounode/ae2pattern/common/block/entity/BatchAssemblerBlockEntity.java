@@ -312,27 +312,58 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
     private static final int MAX_ADVERTISED_PARALLEL_SLOTS =
             Math.max(1, Integer.getInteger("ae2pattern.maxParallelSlots", Integer.MAX_VALUE));
 
+    /**
+     * How many synthesis operations one server tick may perform.
+     *
+     * <p>An operation is either one amortised block - any number of crafts sharing one variant per slot - or
+     * one craft on the slow path. That is what keeps this ceiling from bounding the order: a single variant
+     * covering a billion crafts is still one operation, so the limit only starts to matter once a buffer holds
+     * so many distinct variants that the blocks themselves add up. Counting crafts instead would make a large
+     * amortised batch look expensive and throttle exactly the case that is already cheap.</p>
+     *
+     * <p>Overridable with {@code -Dae2pattern.operationsPerRun=N}. As with the other tuning properties, values
+     * are read through {@code Integer.getInteger}, so a malformed one falls back to the default and a value at
+     * or below zero becomes 1 - see {@link #logEffectiveTuning}.</p>
+     */
+    private static final int OPERATIONS_PER_RUN =
+            Math.max(1, Integer.getInteger("ae2pattern.operationsPerRun", 128));
+
+    /**
+     * Most item stacks a block break may scatter for one leftover key.
+     *
+     * <p>Splitting a very large leftover the ordinary way creates one entity per stack - a machine holding a
+     * billion leftover items would scatter fifteen million of them and take the server with it. Past this many
+     * stacks the remainder is carried in oversized stacks instead, which keeps the material rather than
+     * dropping it and produces a handful of entries instead of millions.</p>
+     */
+    private static final int MAX_LEFTOVER_DROP_STACKS =
+            Math.max(1, Integer.getInteger("ae2pattern.maxLeftoverDropStacks", 1024));
+
     static {
         logEffectiveTuning();
     }
 
     /**
-     * Reports the tuning values at class load, but only for the properties that were actually set. Both are
+     * Reports the tuning values at class load, but only for the properties that were actually set. All three are
      * read with {@code Integer.getInteger}, which falls back to the default on a malformed value without saying
-     * so - and the difference decides how many hand-overs an order costs or whether output is trickled at all.
-     * Printing only what was overridden makes a mistyped launch argument visible while keeping a default launch
-     * silent, which is what a release build has to be.
+     * so - and the difference decides how many hand-overs an order costs, how much of a tick a batch may spend,
+     * or whether output is trickled at all. Printing only what was overridden makes a mistyped launch argument
+     * visible while keeping a default launch silent, which is what a release build has to be.
      */
     private static void logEffectiveTuning() {
         var slots = System.getProperty("ae2pattern.maxParallelSlots");
         var returns = System.getProperty("ae2pattern.outputReturnTicks");
-        if (slots == null && returns == null) {
+        var operations = System.getProperty("ae2pattern.operationsPerRun");
+        var dropStacks = System.getProperty("ae2pattern.maxLeftoverDropStacks");
+        if (slots == null && returns == null && operations == null && dropStacks == null) {
             return;
         }
         if (LOGGER.isInfoEnabled()) {
             LOGGER.info("Batch assembler tuning overridden: maxParallelSlots={} (requested {}), "
-                            + "outputReturnTicks={} (requested {})",
-                    MAX_ADVERTISED_PARALLEL_SLOTS, slots, OUTPUT_RETURN_TICKS, returns);
+                            + "outputReturnTicks={} (requested {}), operationsPerRun={} (requested {}), "
+                            + "maxLeftoverDropStacks={} (requested {})",
+                    MAX_ADVERTISED_PARALLEL_SLOTS, slots, OUTPUT_RETURN_TICKS, returns,
+                    OPERATIONS_PER_RUN, operations, MAX_LEFTOVER_DROP_STACKS, dropStacks);
         }
     }
 
@@ -342,7 +373,7 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
     /** Last answer of {@link #availableParallelSlots()}, valid for the game tick it was measured in. */
     private IPatternDetails cachedSlotsPattern;
     private long cachedSlotsGameTime = -1;
-    private int cachedSlots;
+    private long cachedSlots;
 
     /** Execution plans of the queued patterns, shared between the analysis workers and the tick thread. */
     private final Map<IPatternDetails, PatternPlan> planCache = new ConcurrentHashMap<>();
@@ -689,11 +720,15 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
      * key itself, so a pattern whose candidates differ in amount could be sized against the wrong one.
      * Overshooting is not free here: a refused hand-over leaves the batch to the per-craft fallback, which pays
      * the per-push cost once per craft, so the estimate is worth being conservative about.</p>
+     *
+     * <p>Reported as a {@code long} because the buffer's room is not bounded by {@code Integer.MAX_VALUE}: a
+     * large enough cell holds more crafts than an int can name. Callers whose contract names an int should use
+     * {@link #availableParallelSlots()}, which clamps this.</p>
      */
-    public int availableParallelSlots() {
+    public long availableParallelSlotsLong() {
         var pattern = currentDispatchPattern();
         if (pattern == null) {
-            return 0;
+            return 0L;
         }
         long now = currentGameTime();
         if (pattern == cachedSlotsPattern && now == cachedSlotsGameTime) {
@@ -746,8 +781,21 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
         slots = Math.min(slots, MAX_ADVERTISED_PARALLEL_SLOTS);
         cachedSlotsPattern = pattern;
         cachedSlotsGameTime = now;
-        cachedSlots = (int) Math.max(0L, Math.min(Integer.MAX_VALUE, slots));
+        cachedSlots = Math.max(0L, slots);
         return cachedSlots;
+    }
+
+    /**
+     * {@link #availableParallelSlotsLong()} clamped to {@code int}, for contracts that name the type that way.
+     *
+     * <p>NEO ECO's parallel dispatch states its slot count as an {@code int}, so that path cannot advertise more
+     * than {@link Integer#MAX_VALUE} crafts per hand-over however much room the cells hold. That ceiling belongs
+     * to the protocol, not to this machine: the long form reports what the buffer actually has, and how many
+     * crafts fit in one tick no longer depends on this number at all - the amortised path measures a hand-over
+     * in blocks rather than in crafts.</p>
+     */
+    public int availableParallelSlots() {
+        return (int) Math.min(Integer.MAX_VALUE, availableParallelSlotsLong());
     }
 
     /**
@@ -1226,7 +1274,10 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
         KeyCounter buffer = null;
 
         boolean worked = false;
-        int assembled = 0;
+        long assembled = 0;
+        // Operations used up in this run, against OPERATIONS_PER_RUN. Shared across the whole queue, so one
+        // pattern cannot spend the tick's budget and leave the rest to start their own.
+        int operations = OPERATIONS_PER_RUN;
         // Set when a run stops for a reason of its own, so that a later pattern which does run cannot erase it.
         boolean stopped = false;
         var it = queue.entrySet().iterator();
@@ -1240,31 +1291,41 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
             }
             long remaining = entry.getValue();
 
-            // Crafts that run on one variant per slot need neither the per-craft variant lookup nor a
-            // per-craft recipe call: they are identical, so that part of the order is one craft times its size.
-            // A mixed buffer still amortises whatever one variant covers, and only the rest stays per-craft.
-            long chunk = uniformChunk(plan, remaining);
-            if (chunk >= 2) {
-                if (assembleBatchOnce(entry.getKey(), plan, chunk)) {
-                    workState = WorkState.WORKING;
-                    worked = true;
-                    int jobs = (int) Math.min(Integer.MAX_VALUE, chunk);
-                    assembled += jobs;
-                    remaining -= chunk;
-                    if (remaining <= 0) {
-                        it.remove();
-                        continue;
-                    }
-                    entry.setValue(remaining);
-                } else if (remaining > 1) {
-                    // Not even two crafts shared one damage variant: the whole order is the slow path's work.
-                    notePartialFallback(entry.getKey());
+            // Amortise in blocks until nothing more can be covered. One block is one variant per slot, so a
+            // buffer holding several damage variants is served by several blocks instead of collapsing to the
+            // per-craft path: the block count follows the number of variants, never the number of crafts. Each
+            // block costs the same however many crafts it carries, which is what keeps a very large order off
+            // the per-tick ceiling - one variant covering a billion crafts is one block, hence one operation.
+            // The covered size only shrinks across the blocks of one order, so each search may start from the
+            // previous answer rather than from the whole remaining count.
+            long covered = remaining;
+            while (remaining > 1 && operations > 0) {
+                long chunk = uniformChunk(plan, remaining, covered);
+                if (chunk < 2) {
+                    // Not even two crafts share a variant any more: the rest is the per-craft path's work.
+                    break;
                 }
-                // Anything the batch path refused outright - a recipe that disagrees with the pattern, no
-                // power - falls through to one craft at a time below.
+                if (!assembleBatchOnce(entry.getKey(), plan, chunk)) {
+                    // Refused outright - a recipe that disagrees with the pattern, or no power - so the rest
+                    // falls through to one craft at a time below.
+                    if (remaining > 1) {
+                        notePartialFallback(entry.getKey());
+                    }
+                    break;
+                }
+                if (!stopped) {
+                    workState = WorkState.WORKING;
+                }
+                worked = true;
+                operations--;
+                assembled += chunk;
+                remaining -= chunk;
+                covered = chunk;
             }
 
-            while (remaining > 0) {
+            // Whatever the blocks could not cover runs one craft at a time. Usually this is a handful left
+            // over from a mixed buffer, not the bulk of the order.
+            while (remaining > 0 && operations > 0) {
                 if (buffer == null) {
                     buffer = cellContents();
                 }
@@ -1277,6 +1338,7 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
                     // refused the next is better described by the refusal, which is what its owner has to act on.
                     workState = WorkState.WORKING;
                 }
+                operations--;
                 remaining--;
                 worked = true;
                 assembled++;
@@ -1286,6 +1348,12 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
                 it.remove();
             } else {
                 entry.setValue(remaining);
+            }
+
+            if (operations <= 0) {
+                // Out of budget for this tick. Every still-queued pattern keeps its count, so the next tick
+                // picks up exactly where this one stopped rather than redoing or dropping work.
+                break;
             }
         }
 
@@ -1930,16 +1998,22 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
      * order is covered by a single damage variant - say four fresh tools next to twenty worn ones - the covered
      * part is still amortised and only the rest is run craft by craft. The search is a binary one because
      * coverage only improves as the chunk shrinks: if {@code k} crafts are covered, so is every smaller number.</p>
+     *
+     * <p>{@code ceiling} carries the previous block's size back in. A run only ever consumes material, so the
+     * covered part cannot grow from one block to the next and the search never has to look above the last
+     * answer again. That matters because the search is the one cost a block pays on top of its single
+     * operation: without the bound, a buffer made of many tiny variants would spend more on searches than the
+     * blocks themselves save.</p>
      */
-    private long uniformChunk(PatternPlan plan, long remaining) {
+    private long uniformChunk(PatternPlan plan, long remaining, long ceiling) {
         if (remaining <= 1) {
             return 0;
         }
-        if (canAmortise(plan, remaining)) {
+        long hi = Math.min(remaining, Math.max(1L, ceiling));
+        if (hi >= remaining && canAmortise(plan, remaining)) {
             return remaining;
         }
         long lo = 1;
-        long hi = remaining;
         while (lo < hi) {
             long mid = lo + (hi - lo + 1) / 2;
             if (canAmortise(plan, mid)) {
@@ -2166,10 +2240,27 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
                 LOGGER.warn("Batch assembler leftover {} x{} cannot be dropped as an item", key, amount);
                 continue;
             }
-            while (amount > 0) {
-                int perStack = (int) Math.min(amount, Math.max(1, itemKey.getMaxStackSize()));
+            // Split into normal stacks, but stop at a ceiling: a machine holding a very large leftover would
+            // otherwise spawn one entity per stack - millions of them - and take the server down with it.
+            // Anything past the ceiling is carried in oversized stacks instead, which keeps the material
+            // rather than dropping it and yields a handful of entries rather than millions.
+            long maxStack = Math.max(1, itemKey.getMaxStackSize());
+            int stacks = 0;
+            while (amount > 0 && stacks < MAX_LEFTOVER_DROP_STACKS) {
+                int perStack = (int) Math.min(amount, maxStack);
                 drops.add(itemKey.toStack(perStack));
                 amount -= perStack;
+                stacks++;
+            }
+            if (amount > 0) {
+                LOGGER.warn("Batch assembler leftover {} x{} exceeds {} drop stacks; carrying the rest in "
+                                + "oversized stacks so the world is not flooded with entities",
+                        key, amount, MAX_LEFTOVER_DROP_STACKS);
+                while (amount > 0) {
+                    int perStack = (int) Math.min(amount, Integer.MAX_VALUE);
+                    drops.add(itemKey.toStack(perStack));
+                    amount -= perStack;
+                }
             }
         }
         pendingOutputs.clear();
