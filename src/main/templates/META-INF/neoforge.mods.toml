@@ -140,3 +140,15 @@ type="optional"
 versionRange="*"
 ordering="AFTER"
 side="BOTH"
+
+# Polymorph ("多态合成") is optional: when a set of ingredients matches more than one crafting recipe it lets
+# the player pick which result to make, and our encoding terminal asks it for that pick instead of taking the
+# first match. Its API is reached through a small bridge class that is only loaded once the mod is known to be
+# present, so a pack without it keeps the plain "first match wins" behaviour and never loads its types.
+# AFTER matches the other optional entries: it is the one we reach into.
+[[dependencies.${mod_id}]]
+modId="polymorph"
+type="optional"
+versionRange="*"
+ordering="AFTER"
+side="BOTH"
