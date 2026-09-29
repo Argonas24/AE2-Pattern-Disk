@@ -174,6 +174,34 @@ P0 不应新造范式，同文件里已有两处“每 tick 限量”的先例�
 - `drainOutputs`（`:1387`）：`rate = 总量 / OUTPUT_RETURN_TICKS`，每 tick 只回送一份额度；
 - 同类思路还体现在 `shortRunStreak` / `IDLE_RESET_WINDOWS` 的窗口退避上。
 
+### K. 样板磁盘存储策略审视（内存风险与 1024 截断）— P2 ⬜（2026-09 记录，已审视待决定）
+
+- **问题**：单盘上限 1024，一个标准样板磁盘供应器是否因 1024×9 而爆内存？是否需要改为 UUID 加载策略？
+- **结论**：① **不会爆内存**（当前缓存设计正确）；② **UUID 方案不必要**；③ 真实缺陷是 **1024 截断**（功能而非内存）；④ 真实热点是 **`computeFingerprint`**。
+- **存储链路（实测）**：
+  - 磁盘 `ItemStack` → `DataComponent: PatternDiskContents { type, List<ItemStack> patterns }`（上限 1024，写路径整体替换 record）
+  - `PatternDiskProviderLogic` 构造 `super(mainNode, host, 1024)` ← **固定 1024 槽**（不是 1024×9）
+  - `refreshPatternsFromDisks()`：`computeFingerprint` → 收集所有磁盘的样板 → 写前 1024 个进 `patternInv` → `updatePatterns()`
+  - 解码：`PatternClassifier.decodedStored()` → `WeakHashMap<PatternDiskContents, DecodedPatterns>`
+- **内存量化（估算，非实测）**：
+
+| 项 | 数量 | 量级 |
+|---|---|---|
+| 磁盘内容 DataComponent | 9 × 1024 ItemStack | ~2–5 MB |
+| `patternInv` 镜像 | 1024 个副本 | ~0.4 MB |
+| 供应器解码结果 | 1024 个 `IPatternDetails` | ~1–3 MB |
+| 解码缓存 | **9 个条目**（按盘）× ≤1024 | ~9–28 MB |
+
+  - **弱键** ⇒ 缓存与磁盘同生命周期，磁盘移走后条目可被 GC，无无上限增长；
+  - **按键共享** ⇒ 多台供应器插相同内容的磁盘只解一份，内存**不随机器数线性增长**，而是随**不同磁盘内容的数量**增长；
+  - 真正累积场景：大量**内容各不相同**的满盘同时存在（全服磁盘内容总量决定规模）——这一点 UUID 也救不了。
+- **UUID 方案否决理由**：目标问题（避免全量材料化驻留）已被内容快照缓存解决；UUID 会引入全局注册表、UUID→内容 的持久映射与存档迁移，且 AE2 的 `IPatternDetails` 本来就必须在应答 CPU 前解码，UUID 只是把解码推迟。
+- **优化空间**：
+  1. ⚠️ `computeFingerprint`（`:100`）对整盘组件 `stack.getComponentsPatch().hashCode()` 求哈希——满盘时相当于每次刷新遍历 9216 个样板的 NBT。因 `PatternDiskContents` 是 record 且**每次写入整体替换**，指纹可退化为“按槽记录 contents 实例、用引用比较”，O(9) 而非按 NBT 哈希。低风险、高收益。
+  2. **1024 截断至少应可见**：当前是静默丢弃（第 2–9 张盘的样板不提供给合成系统，既不报错也不提示），玩家无从察觉超越。详见条目 F。
+  3. 内存层面**无实质优化空间**（现状正确）。
+- **关联**：条目 F（1024 截断行为待补文档）、批处理装配室与供应器共用同一套磁盘内容 API。
+
 ## 四、执行约束
 - 目标：NeoForge 21.1.241 / MC 1.21.1 / JDK 21 / AE2 19.2.17（编译依赖口径；`gradle.properties` 中的 `ae2_version=19.2.8` 为未使用的历史键）
 - 只用 AE2 公共 API；机器美术资源统一放本项目 `assets/ae2_pattern_disk/textures/`，不直接引用 `ae2:` 纹理（借用的复制件见 README 授权表；零件/物品显示模型仍继承 `ae2:item/display_base`、`ae2:part/display_off`、`ae2:item/cable_interface`）
