@@ -96,6 +96,16 @@
 - 本项目策略：批处理装配室**不要**用该方法判组件；需要时直接用 `!stack.getComponents().isEmpty()`。
 - 待办：整理最小复现（带组件输入 + 可替换配方）后报 AE2 上游。
 
+### I. 万象构序（OmniSequence）批量发配适配 — P3 ⏸（2026-09 记录，可行性已确认，暂不实施）
+
+- **背景**：万象构序（`molecularmanipulator`）自 1.3.9 起提供 `Omni Batch Provider API v1`（运行时 ABI 1，包 `com.atir.molecularmanipulator.api.crafting`）。它让 CPU 一次分配多份**完整**配方，而非每份推一次——正是批处理装配室已有的能力形态。
+- **契约**：两阶段握手。`prepareOmniBatch(OmniBatchProbe)` 返回 `OmniBatchAdmission`（`maxCrafts()` < 2 视为不参与，也可直接返回 `null`）；随后 `commit(OmniBatchDelivery)` 必须**同步**调 `accept(Receipt)` 或 `reject(Rejection)` 之一。硬约束：`accept` 前整批材料必须已在持久目标内；禁止部分接收；`commit` 收到的是整批总量，**不得用 `probe × craftCount` 校验交付**（AE2 替代输入会改变 key 或比例）；拒绝需分因——`CAPACITY_CHANGED` 只压当前 tick、下 tick 可重试，其余原因会让该供应器/样板在当前作业内退回单份。
+- **本机已具备（六项对上）**：机器已是 `ICraftingProvider`（`:98`）；`acceptPatternBatch` 全有或全无（`:772`）；材料进的是存储元件，内容随物品落盘（`:445`）；`inputTotal` 直接缓冲、不做乘法校验（`:761` 注释）；全库无 CPU Mixin（`CraftingCpuLogic` 零引用，且 Omni 自己 mixin 该 CPU，不冲突）；只收物品 key、含流体的样板在发配前拒绝。
+- **障碍**：Omni 用 `instanceof OmniBatchCraftingProvider` 在 AE2 交出的 provider 实例上做类型判断（`CraftingCpuLogicMixin:1204`），**没有 provider 注册表** → 本项目 NeoECO 那种 adapter 包装（`BatchAssemblerParallelIntake`）在此不适用，机器类必须自己实现接口 ⇒ 只能走**条件 mixin**（上游文档亦如此建议；NeoECO 那条路径的注释记明团队是有意去掉 mixin 的，此处属接口形态所迫）。
+- **改动面**：① 条件 mixin 注入接口 + `MixinConfigPlugin` 按 `molecularmanipulator` 加载状态放行；② `availableParallelSlots()` 现读机器内部 `currentDispatchPattern()`（空机器首次发配返回 0，只能靠先吃一次单份把 `lastHandedPattern` 填上才进入批量轨道），需加 `availableParallelSlotsFor(IPatternDetails)` 重载改用 probe 传入的样板、原生方法转调它（**顺带修 NeoECO 路径的首发迟滞**）；③ `commit` 里区分 `CAPACITY_CHANGED` 与其他拒绝（`acceptPatternBatch` 只返回 boolean，需先探容量再定性）；④ `build.gradle` 加 `compileOnly` + `neoforge.mods.toml` 声明 `optional`/`AFTER`。
+- **待评估**：实现 `OmniPostAccountingOutputProvider`——本机产物走持久平滑回传队列（延迟交付，`:2103`），正对上游所述「`waitingFor` 窗口填满导致停顿」场景；该项**自带注册表**（`OmniPostAccountingOutputAdapterRegistry`），无需 mixin。
+- **参考来源**：`AyaYumi/OmniSequence-Transfinite` 分支 `1.21.1-neoforge`，文档 `docs/omni-batch-provider-api.md`（16K，含中文版）；本机曾克隆到 `~/.pi/tmp/omniseq-t`（临时目录，勿依赖）。
+
 ## 四、执行约束
 - 目标：NeoForge 21.1.241 / MC 1.21.1 / JDK 21 / AE2 19.2.17（编译依赖口径；`gradle.properties` 中的 `ae2_version=19.2.8` 为未使用的历史键）
 - 只用 AE2 公共 API；机器美术资源统一放本项目 `assets/ae2_pattern_disk/textures/`，不直接引用 `ae2:` 纹理（借用的复制件见 README 授权表；零件/物品显示模型仍继承 `ae2:item/display_base`、`ae2:part/display_off`、`ae2:item/cable_interface`）
