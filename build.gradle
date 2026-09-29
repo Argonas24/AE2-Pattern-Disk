@@ -296,6 +296,13 @@ dependencies {
     // 服务端（main）与客户端（client）两侧都要它：菜单走配方查询，屏幕走 widget。
     localRuntime 'maven.modrinth:polymorph:9yWvrF5o'
     clientLocalRuntime 'maven.modrinth:polymorph:9yWvrF5o'
+
+    // 兼容性测试用的 AE2 生态模组（只进开发环境，不参与发布依赖）：
+    //   万象构序 OmniSequence Transfinite、闪电科技重生 AE2 Lightning Tech Reborn
+    //   及后者的封包样板供应器附属。三者与本模组的样板/供应器功能有重叠，重点测共存。
+    localRuntime 'curse.maven:omnisequence-transfinite-1624558:8991983'
+    localRuntime 'curse.maven:ae2-lightning-tech-reborn-1703763:8930743'
+    localRuntime 'curse.maven:ae2lt-packaged-pattern-provider-1572723:8929486'
     // Neo ECO AE Extension: separates crafting/storage/computation into multiblock structures whose
     // computation cluster supplies a huge crafting-dispatch budget (thousands of parallel ops) through
     // its own CraftingService mixin. Dev-only; used to test large-order throughput and the
