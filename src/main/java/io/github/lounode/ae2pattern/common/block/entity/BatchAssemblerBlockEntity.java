@@ -296,21 +296,46 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
     private final Map<IPatternDetails, Long> queue = new LinkedHashMap<>();
 
     /**
-     * Upper bound on the parallel slots advertised to NEO ECO. Unlimited by default: the machine's own ceiling
+     * Upper bound on the parallel slots advertised to callers. Unlimited by default: the machine's own ceiling
      * is not a real constraint, so it must not become the limit a pack runs into. What actually bounds one
-     * hand-over is the cell buffer's shared free space (measured in {@link #availableParallelSlots()}), and past
-     * that what NEO ECO can put in the CPU inventory, its material and its energy - all of which the CPU already
-     * clamps itself. Reporting the protocol's own maximum therefore hands the limit to the factors that exist
-     * rather than to a constant here.
+     * hand-over is the cell buffer's shared free space (measured in {@link #availableParallelSlotsLong()}), and
+     * past that what the CPU can put in its inventory, its material and its energy - all of which the CPU already
+     * clamps itself. Reporting the type's own maximum therefore hands the limit to the factors that exist rather
+     * than to a constant here.
+     *
+     * <p>A {@code long} rather than an {@code int}: the buffer's room is not bounded by {@code Integer.MAX_VALUE},
+     * and an int ceiling made the long form of the estimate pointless in two ways - it capped the answer after the
+     * fact, and the probe below used it as a multiplier as well, so on a cell that answers a probe by echoing it
+     * back - AE2's own cells with a void upgrade do exactly that - the advertised number came out around
+     * {@code Integer.MAX_VALUE / slots} instead.</p>
+     *
+     * <p>Callers whose contract names an int still get their ceiling from {@link #availableParallelSlots()};
+     * NEO ECO's parallel dispatch is the one that does.</p>
      *
      * <p>Overridable with {@code -Dae2pattern.maxParallelSlots=N} to bring back a ceiling. {@code N} is parsed as
-     * in {@code Integer.getInteger}, so a malformed value falls back to unlimited - which would quietly run the
-     * other group of a comparison, so check the effective value logged at class load (see
-     * {@link #logEffectiveTuning}). A value at or below zero becomes 1: one craft per hand-over, meant only for
-     * the lower end of a comparison.</p>
+     * in {@code Long.getLong} - same {@code 0x} and leading-zero-octal acceptance as {@code Integer.getInteger} -
+     * and a malformed value falls back to unlimited, which would quietly run the other group of a comparison, so
+     * check the effective value logged at class load (see {@link #logEffectiveTuning}). A value at or below zero
+     * becomes 1: one craft per hand-over, meant only for the lower end of a comparison. The default has to stay a
+     * primitive {@code long} literal: the boxed {@code getLong(String, Long)} overload returns null for a
+     * malformed value, and unboxing that would throw.</p>
      */
-    private static final int MAX_ADVERTISED_PARALLEL_SLOTS =
-            Math.max(1, Integer.getInteger("ae2pattern.maxParallelSlots", Integer.MAX_VALUE));
+    private static final long MAX_ADVERTISED_PARALLEL_SLOTS =
+            Math.max(1L, Long.getLong("ae2pattern.maxParallelSlots", Long.MAX_VALUE));
+
+    /**
+     * How much the capacity probe asks a cell to take.
+     *
+     * <p>It only has to be larger than any real free space, so it sits well below {@link Long#MAX_VALUE}. Cells
+     * that answer a request by echoing it back would otherwise report a full {@code Long.MAX_VALUE} as free room,
+     * which the estimate cannot tell apart from "nothing could be measured" - and that apart is the difference
+     * between reporting a usable parallel count and reporting zero. AE2's own cells do exactly this when they hold
+     * a void upgrade, so a buffering cell fitted with one would silently switch the parallel path off.</p>
+     *
+     * <p>Understating the probe only ever understates the estimate, which is the safe direction: a refused
+     * hand-over costs the batch path, not correctness.</p>
+     */
+    private static final long CAPACITY_PROBE = Long.MAX_VALUE / 1024;
 
     /**
      * How many synthesis operations one server tick may perform.
@@ -322,8 +347,9 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
      * amortised batch look expensive and throttle exactly the case that is already cheap.</p>
      *
      * <p>Overridable with {@code -Dae2pattern.operationsPerRun=N}. As with the other tuning properties, values
-     * are read through {@code Integer.getInteger}, so a malformed one falls back to the default and a value at
-     * or below zero becomes 1 - see {@link #logEffectiveTuning}.</p>
+     * are read through {@code Integer.getInteger} - and the parallel-slot ceiling through {@code Long.getLong},
+     * since it is a long - so a malformed one falls back to the default and a value at or below zero becomes 1 -
+     * see {@link #logEffectiveTuning}.</p>
      */
     private static final int OPERATIONS_PER_RUN =
             Math.max(1, Integer.getInteger("ae2pattern.operationsPerRun", 128));
@@ -344,11 +370,12 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
     }
 
     /**
-     * Reports the tuning values at class load, but only for the properties that were actually set. All three are
-     * read with {@code Integer.getInteger}, which falls back to the default on a malformed value without saying
-     * so - and the difference decides how many hand-overs an order costs, how much of a tick a batch may spend,
-     * or whether output is trickled at all. Printing only what was overridden makes a mistyped launch argument
-     * visible while keeping a default launch silent, which is what a release build has to be.
+     * Reports the tuning values at class load, but only for the properties that were actually set. All are read
+     * with {@code Integer.getInteger} - or {@code Long.getLong} for the parallel-slot ceiling - which fall back to
+     * the default on a malformed value without saying so, and the difference decides how many hand-overs an order
+     * costs, how much of a tick a batch may spend, or whether output is trickled at all. Printing only what was
+     * overridden makes a mistyped launch argument visible while keeping a default launch silent, which is what a
+     * release build has to be.
      */
     private static void logEffectiveTuning() {
         var slots = System.getProperty("ae2pattern.maxParallelSlots");
@@ -763,11 +790,11 @@ public class BatchAssemblerBlockEntity extends AENetworkedBlockEntity
                 reservedUnits += typeEntryUnits(key);
             }
             // Saturating, because the sum only has to decide whether a hand-over is possible at all; a capped
-            // estimate of Integer.MAX_VALUE crafts can overflow it on a large per-craft amount.
+            // estimate can overflow it on a large per-craft amount.
             perCraftTotal = perCraft >= Long.MAX_VALUE - perCraftTotal ? Long.MAX_VALUE : perCraftTotal + perCraft;
-            long probe = perCraft <= Long.MAX_VALUE / MAX_ADVERTISED_PARALLEL_SLOTS
+            long probe = perCraft <= CAPACITY_PROBE / MAX_ADVERTISED_PARALLEL_SLOTS
                     ? perCraft * MAX_ADVERTISED_PARALLEL_SLOTS
-                    : Long.MAX_VALUE;
+                    : CAPACITY_PROBE;
             long free = insertIntoCells(key, probe, Actionable.SIMULATE);
             // The probe already saw the key as it is: for a key that is present it returns its item room, and
             // for a new key the first inserted item already paid the type entry. What the probe cannot know is
