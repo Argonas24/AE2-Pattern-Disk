@@ -243,7 +243,7 @@ build it, then copy the result in:
 ```bash
 cd ../NeoECOAEExtension
 ./gradlew build -x test
-cp build/libs/neoecoae-21.2.0-beta5.jar ../AE2-Pattern-Disk/libs/
+cp build/libs/neoecoae-21.2.0-beta7.jar ../AE2-Pattern-Disk/libs/
 ```
 
 The jar carries the branch's version string unchanged, so it can read the same as an official release;
