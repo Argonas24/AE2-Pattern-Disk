@@ -69,8 +69,13 @@ public final class JechPinyin {
                     LOGGER.info("JECH Match#contains is not static; disk search stays literal");
                 }
             } catch (Throwable absent) {
-                // 没装 JECH（或它改了 API）：功能降级即可，不是错误。
+                // 没装 JECH 是正常情况，装了却取不到就是它换了类名或签名——两种都降级，但后者该留痕，
+                // 否则玩家只会看到「搜不出来」而日志一片安静。ModList 始终可用，不引入类加载风险。
                 contains = null;
+                if (net.neoforged.fml.ModList.get().isLoaded("jecharacters")) {
+                    LOGGER.warn("JECH is loaded but {}#contains could not be resolved; search stays literal",
+                            MATCH_CLASS, absent);
+                }
             }
         }
         return contains;

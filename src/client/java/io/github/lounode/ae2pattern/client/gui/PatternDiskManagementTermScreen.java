@@ -53,6 +53,7 @@ import appeng.client.gui.widgets.ServerSettingToggleButton;
 import appeng.core.localization.ButtonToolTips;
 
 import io.github.lounode.ae2pattern.api.PatternDiskApi;
+import io.github.lounode.ae2pattern.client.integration.JechPinyin;
 import io.github.lounode.ae2pattern.client.sort.NaturalOrder;
 import io.github.lounode.ae2pattern.client.sort.NaturalSort;
 import io.github.lounode.ae2pattern.client.sort.NumericSeries;
@@ -774,27 +775,23 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
     }
 
     /**
-     * 样板在终端里该显示的主产物；不是 AE2 样板物品、或取不到主产物时返回空堆。
-     *
-     * <p>直接用 AE2 的 {@code EncodedPatternItem#getOutput}：它对非物品产出（流体等）会包一层伪物品，
-     * 所以任何类型的产物都能直接显示；它也自带缓存，逐帧调用不会反复解码。该方法在“解出的样板报告零产出”
-     * 时会在内部越界，而渲染路径不能因此炸掉整帧，所以在边界收口一次。</p>
-     */
-    /**
      * 样板是否匹配顶部内容搜索栏的文本；范围决定只看产物、只看输入，还是两边都看。
      *
      * <p>产物侧直接用格子显示的那个栈（与排序同一口径，流体等非物品产出也覆盖）；输入侧走 AE2 的样板解码，
      * 解不出的坏样板只在产物侧参与匹配，不让它把整帧弄崩。</p>
+     *
+     * <p>匹配本身走 {@link JechPinyin}：装了 JECH 时中文名也能按拼音与首字母搜，没装就退回小写子串——
+     * 与编码终端的磁盘搜索同一口径。两侧都走它，所以一个搜索框不会只看中文产物不认中文输入。</p>
      */
     private boolean patternMatchesContentSearch(ItemStack pattern) {
         if (this.contentSearchText == null || this.contentSearchText.isBlank()) {
             return true;
         }
-        var needle = this.contentSearchText.trim().toLowerCase(java.util.Locale.ROOT);
+        var needle = this.contentSearchText.strip().toLowerCase(java.util.Locale.ROOT);
         var scope = this.searchScope;
         var onlyInput = scope == io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope.INPUT;
         var onlyOutput = scope == io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic.SearchScope.OUTPUT;
-        if (!onlyInput && displayedItemName(pattern).toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+        if (!onlyInput && JechPinyin.contains(displayedItemName(pattern), needle)) {
             return true;
         }
         if (onlyOutput) {
@@ -811,8 +808,7 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
         for (var input : details.getInputs()) {
             for (var possible : input.getPossibleInputs()) {
                 if (possible != null && possible.what() != null
-                        && possible.what().getDisplayName().getString().toLowerCase(java.util.Locale.ROOT)
-                                .contains(needle)) {
+                        && JechPinyin.contains(possible.what().getDisplayName().getString(), needle)) {
                     return true;
                 }
             }
@@ -820,6 +816,13 @@ public class PatternDiskManagementTermScreen extends PatternDiskEncodingTermScre
         return false;
     }
 
+    /**
+     * 样板在终端里该显示的主产物；不是 AE2 样板物品、或取不到主产物时返回空堆。
+     *
+     * <p>直接用 AE2 的 {@code EncodedPatternItem#getOutput}：它对非物品产出（流体等）会包一层伪物品，
+     * 所以任何类型的产物都能直接显示；它也自带缓存，逐帧调用不会反复解码。该方法在“解出的样板报告零产出”
+     * 时会在内部越界，而渲染路径不能因此炸掉整帧，所以在边界收口一次。</p>
+     */
     private static ItemStack patternOutputOf(ItemStack pattern) {
         if (!(pattern.getItem() instanceof appeng.crafting.pattern.EncodedPatternItem encodedPattern)) {
             return ItemStack.EMPTY;
