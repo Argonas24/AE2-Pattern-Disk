@@ -65,6 +65,8 @@ public class AE2PatternDiskClient {
 
     private void clientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(InitPatternDiskProperties::init);
+        // 多态合成（可选前置）：把本模组的编码终端登记给 Polymorph，未装时此调用直接返回。
+        event.enqueueWork(io.github.lounode.ae2pattern.client.integration.polymorph.PolymorphClientCompat::register);
     }
 
     private void registerAdditionalModels(ModelEvent.RegisterAdditional event) {

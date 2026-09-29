@@ -54,6 +54,8 @@ import appeng.menu.slot.RestrictedInputSlot;
 import appeng.parts.encoding.EncodingMode;
 import appeng.util.ConfigInventory;
 
+import io.github.lounode.ae2pattern.common.integration.polymorph.PolymorphCompat;
+
 import io.github.lounode.ae2pattern.AEPatternRegistries;
 import io.github.lounode.ae2pattern.common.item.PatternDiskItem;
 import io.github.lounode.ae2pattern.common.menu.DiskEncodingLogic;
@@ -333,6 +335,11 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu implements IPatte
         registerClientAction(ACTION_DIVIDE_OUTPUT, Integer.class, this::divideOutput);
         registerClientAction("setSubstitution", Boolean.class, encodingLogic::setSubstitution);
         registerClientAction("setFluidSubstitution", Boolean.class, encodingLogic::setFluidSubstitution);
+        // 多态合成：客户端选了另一个配方之后清掉产物缓存并重算。
+        registerClientAction(PolymorphCompat.ACTION_SELECT_RECIPE, () -> {
+            this.currentRecipe = null;
+            getAndUpdateOutput();
+        });
         registerClientAction("setStonecuttingRecipeId", ResourceLocation.class,
                 encodingLogic::setStonecuttingRecipeId);
         registerClientAction(ACTION_TRANSFER_TO_DISK, Long.class, this::transferToDisk);
@@ -536,6 +543,15 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu implements IPatte
         else return null;
     }
 
+    /**
+     * 多态合成：客户端选中了另一个配方，请服务端重算产物。
+     *
+     * <p>只负责发动作，实际重算在 {@code ACTION_SELECT_RECIPE} 的服务端处理里——那边才有权威的配方数据。</p>
+     */
+    public void notifyRecipeSelected() {
+        sendClientAction(PolymorphCompat.ACTION_SELECT_RECIPE);
+    }
+
     private ItemStack getAndUpdateOutput() {
         var level = this.getPlayerInventory().player.level();
         var items = NonNullList.withSize(CRAFTING_GRID_WIDTH * CRAFTING_GRID_HEIGHT, ItemStack.EMPTY);
@@ -547,8 +563,9 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu implements IPatte
         }
         var input = CraftingInput.of(CRAFTING_GRID_WIDTH, CRAFTING_GRID_HEIGHT, items);
         if (this.currentRecipe == null || !this.currentRecipe.value().matches(input, level)) {
+            // 装了多态合成时由它按玩家在这组材料上选过的配方返回，没装则退回原生的「第一个匹配」。
             this.currentRecipe = invalidIngredients ? null
-                    : level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, input, level).orElse(null);
+                    : PolymorphCompat.getCraftingRecipe(this, input, level, getPlayer());
             this.currentMode = this.mode;
             checkFluidSubstitutionSupport();
         }
@@ -1389,6 +1406,12 @@ public class PatternDiskEncodingTermMenu extends MEStorageMenu implements IPatte
 
     @Override
     public void setItem(int slotID, int stateId, ItemStack stack) {
+        // 多态合成：材料变了才清缓存。槽位同步调得非常频，无条件清会让每次同步都重扫一遍合成配方；
+        // 而内容真的变了时，清掉再重算才会重新走取配方路径，把选择权交回给 Polymorph。
+        if (slotID >= 0 && slotID < this.slots.size()
+                && !ItemStack.matches(this.slots.get(slotID).getItem(), stack)) {
+            this.currentRecipe = null;
+        }
         super.setItem(slotID, stateId, stack);
         this.getAndUpdateOutput();
     }

@@ -226,6 +226,9 @@ dependencies {
     // 全在这份 api 里。main 与 client 两个源集都要看得到。
     compileOnly 'de.mari_023:ae2wtlib_api:19.5.0'
     clientCompileOnly 'de.mari_023:ae2wtlib_api:19.5.0'
+    // Polymorph（多态合成）：客户端要继承它的 widget API（PlayerRecipesWidget），
+    // 所以必须进 client 源集的编译类路径——项目是双源集，main 侧的 compileOnly 看不到这里。
+    clientCompileOnly 'maven.modrinth:polymorph:9yWvrF5o'
 
     // EAE (ExtendedAE) + AAE (AdvancedAE) dev environment: reference mods for GUI/feature parity work.
     // 1.21.1/NeoForge/AE2 19.2.x compatible (EAE 1.21-2.2.35, AAE 1.6.11-1.21.1).
@@ -275,6 +278,10 @@ dependencies {
     // The provider classes compile against Jade, and the plugin's client registration is client-side API, so the
     // dependency has to sit on the main compile classpath rather than only in the runtime block above.
     compileOnly 'maven.modrinth:jade:15.10.6+neoforge'
+
+    // Polymorph（多态合成）：可选前置。只借它的公开 API，不捆绑任何代码/资源。
+    // 未装时本模组必须完全不受影响，所以引用它的类都要先过加载守卫。
+    compileOnly 'maven.modrinth:polymorph:9yWvrF5o'
     localRuntime 'maven.modrinth:mekanism:10.7.19.85'
     localRuntime 'maven.modrinth:mekanism-generators:10.7.19.85'
     localRuntime 'maven.modrinth:mekanism-tools:10.7.19.85'
@@ -283,6 +290,12 @@ dependencies {
     // build storage test setups the vanilla cell tiers cannot cover. Dev-only (localRuntime).
     // Modrinth version id k444ySGT = AE Omni Cells 1.1.6 for 1.21.1 neoforge.
     localRuntime 'maven.modrinth:ae2-omni-cells:k444ySGT'
+
+    // Polymorph（多态合成）：开发环境装上用于集成测试，不进发布依赖——
+    // 正式运行时它是可选前置（未装时本模组需完全不受影响）。
+    // 服务端（main）与客户端（client）两侧都要它：菜单走配方查询，屏幕走 widget。
+    localRuntime 'maven.modrinth:polymorph:9yWvrF5o'
+    clientLocalRuntime 'maven.modrinth:polymorph:9yWvrF5o'
     // Neo ECO AE Extension: separates crafting/storage/computation into multiblock structures whose
     // computation cluster supplies a huge crafting-dispatch budget (thousands of parallel ops) through
     // its own CraftingService mixin. Dev-only; used to test large-order throughput and the
