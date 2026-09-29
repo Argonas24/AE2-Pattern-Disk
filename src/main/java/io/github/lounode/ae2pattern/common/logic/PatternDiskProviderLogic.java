@@ -1,5 +1,7 @@
 package io.github.lounode.ae2pattern.common.logic;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Supplier;
 
 import net.minecraft.world.item.ItemStack;
@@ -28,27 +30,32 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
 
     private final Supplier<AppEngInternalInventory> diskInventorySupplier;
 
-    /** Fingerprint of the last rebuilt disk content; skips a full rebuild when unchanged. */
-    private int lastDiskFingerprint;
-    /** True once the first successful rebuild has settled the fingerprint. */
-    private boolean fingerprintInitialized;
+    /**
+     * Disk state as of the last rebuild: one entry per slot, {@code null} for an empty slot and the disk's
+     * {@link PatternDiskContents} instance otherwise.
+     *
+     * <p>Skipping an unchanged rebuild matters because the rebuild rewrites the whole mirror, but the check
+     * itself must not cost as much as what it skips. A {@code PatternDiskContents} is replaced whenever the
+     * disk is written - every write path returns a new record - so the instance is a content version, and
+     * comparing states is a reference check per slot instead of a hash over every pattern's components.</p>
+     */
+    private List<Object> lastDiskState;
 
     public PatternDiskProviderLogic(IManagedGridNode mainNode, PatternProviderLogicHost host,
             Supplier<AppEngInternalInventory> diskInventorySupplier) {
         super(mainNode, host, 1024);
         this.diskInventorySupplier = diskInventorySupplier;
-        this.lastDiskFingerprint = 0;
-        this.fingerprintInitialized = false;
+        this.lastDiskState = null;
     }
 
     /**
      * Rebinds the parent's pattern inventory to the encoded patterns on all inserted disks, then lets the
      * parent rebuild its pattern list.
      *
-     * <p>Strategy 2 (static resolver): recompute the disk fingerprint; if it is unchanged since the last
-     * rebuild we short-circuit and skip the expensive {@code clear + rewrite + updatePatterns()} so a
-     * burst of same-content invocations coalesces into a single rebuild. A content change (slot in/out or
-     * disk repattern) rebuilds fresh in one pass.</p>
+     * <p>Strategy 2 (static resolver): take the disk state again; if it is unchanged since the last rebuild
+     * we short-circuit and skip the expensive {@code clear + rewrite + updatePatterns()} so a burst of
+     * same-content invocations coalesces into a single rebuild. A content change (slot in/out or disk
+     * repattern) rebuilds fresh in one pass.</p>
      */
     public boolean refreshPatternsFromDisks() {
         var diskInventory = diskInventorySupplier.get();
@@ -56,8 +63,8 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
             return false;
         }
 
-        int fingerprint = computeFingerprint(diskInventory);
-        if (fingerprintInitialized && fingerprint == lastDiskFingerprint) {
+        var state = diskState(diskInventory);
+        if (sameState(lastDiskState, state)) {
             return false; // unchanged: coalesce, skip full rebuild
         }
 
@@ -66,7 +73,7 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
             return false;
         }
 
-        java.util.List<ItemStack> all = new java.util.ArrayList<>();
+        List<ItemStack> all = new ArrayList<>();
         for (int i = 0; i < diskInventory.size(); i++) {
             ItemStack diskStack = diskInventory.getStackInSlot(i);
             if (diskStack.isEmpty() || !(diskStack.getItem() instanceof PatternDiskItem disk)) {
@@ -86,33 +93,57 @@ public class PatternDiskProviderLogic extends PatternProviderLogic {
         // Parent decodes patternInventory into its patterns list and requests a grid update.
         updatePatterns();
 
-        lastDiskFingerprint = fingerprint;
-        fingerprintInitialized = true;
+        lastDiskState = state;
         return true;
     }
 
     /**
-     * A content fingerprint over the disk inventory: each non-empty slot contributes its item id and its
-     * component patch hash (container components). Slot indices are included so removing a disk at a
-     * different position is treated as a change. Ignoring stack count keeps a disk with a burst of
-     * insertions stable.
+     * One entry per slot: {@code null} when empty, the disk's contents instance for a pattern disk, and the
+     * item itself for anything else (a non-disk contributes nothing to the mirror, so the item identifies it).
+     *
+     * <p>An untyped disk that has never been written to stores no component, and {@code contents()} then builds
+     * a fresh empty instance on every call - left as it is, such a disk would look changed on every refresh. It
+     * contributes nothing to the mirror either way, so it is folded into {@code null} like an empty slot.</p>
+     *
+     * <p>The entries are content versions only because every write replaces the record: the list inside it is
+     * immutable, but its {@code ItemStack} elements are not, so a caller that edited one in place would leave
+     * this check blind to it. The {@link PatternDiskContents} contract already forbids that - read them, but do
+     * not modify them in place - and every path that hands these stacks out copies them first, so the state
+     * stays honest for as long as that contract holds. An in-place edit is the one thing the hash this replaced
+     * would have noticed and this does not.</p>
      */
-    private static int computeFingerprint(AppEngInternalInventory diskInventory) {
-        int hash = 1;
+    private static List<Object> diskState(AppEngInternalInventory diskInventory) {
+        var state = new ArrayList<Object>(diskInventory.size());
         for (int i = 0; i < diskInventory.size(); i++) {
             ItemStack stack = diskInventory.getStackInSlot(i);
             if (stack.isEmpty()) {
-                hash = 31 * hash + (i + 1); // empty slot contributes its index
-                continue;
+                state.add(null);
+            } else if (stack.getItem() instanceof PatternDiskItem disk) {
+                var contents = disk.contents(stack);
+                state.add(contents.isEmpty() ? null : contents);
+            } else {
+                state.add(stack.getItem());
             }
-            int itemHash = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                    .getKey(stack.getItem()).hashCode();
-            int componentsHash = stack.getComponentsPatch().hashCode();
-            hash = 31 * hash + itemHash;
-            hash = 31 * hash + componentsHash;
-            hash = 31 * hash + (i + 1);
         }
-        return hash;
+        return state;
+    }
+
+    /**
+     * Whether two states describe the same disks, by reference. The entries are already content versions, so
+     * identity is the comparison meant here - {@code equals} would walk every pattern's components, which is
+     * exactly the cost this check exists to avoid. A slot whose contents were written compares unequal even
+     * when the new contents happen to be equal to the old, and rebuilding is the safe direction.
+     */
+    private static boolean sameState(List<Object> previous, List<Object> current) {
+        if (previous == null || previous.size() != current.size()) {
+            return false;
+        }
+        for (int i = 0; i < previous.size(); i++) {
+            if (previous.get(i) != current.get(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // The parent's updatePatterns re-reads patternInventory; our refresh already filled it.
