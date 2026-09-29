@@ -106,6 +106,32 @@
 - **待评估**：实现 `OmniPostAccountingOutputProvider`——本机产物走持久平滑回传队列（延迟交付，`:2103`），正对上游所述「`waitingFor` 窗口填满导致停顿」场景；该项**自带注册表**（`OmniPostAccountingOutputAdapterRegistry`），无需 mixin。
 - **参考来源**：`AyaYumi/OmniSequence-Transfinite` 分支 `1.21.1-neoforge`，文档 `docs/omni-batch-provider-api.md`（16K，含中文版）；本机曾克隆到 `~/.pi/tmp/omniseq-t`（临时目录，勿依赖）。
 
+### J. 极大数（远超 2.1G）兼容性优化线路 — P2 ⏸（2026-09 记录，已审计待实施）
+
+- **故障现象（实测）**：极大订单导致世界线程阻塞、autosave 无法写入（数据上行卡死）。
+- **根因**：`runBatch()` 的 javadoc 自述 “with no per-tick ceiling”。摊销路径 `assembleBatchOnce(chunk)` 是 O(1)，无上限本身没问题；但同一循环里还住着逐份路径 `while (remaining > 0) { assembleOnce(...) }`（`:1267`）——一旦 `canAmortise` 覆盖不满整批（多变量混料、某槽候选拼不满、留容器槽），剩余份数就在**单个 tick 内**逐份跑完。每份 `assembleOnce` 是一次完整合成（`resolveInputs` → `consumeInputs` → 产出 map → 记账），量级数十微秒 ⇒ 剩 1 万份约 0.5 秒、100 万份约 50 秒。
+- **2.1G 的真实角色**：不是根因（`canAmortise` / `chunk` / `remaining` 全程 long，逐份路径的触发与它无因果）；但 `availableParallelSlots()` 返回 int 使超大订单被 CPU 切成多批交接，**每批各触发一次无预算循环**，因此“2.1G → 份数极大 → 卡死”这条链真实存在，2.1G 是放大器而非源头。
+- **全链路风险清单（已审计）**：
+
+| # | 位置 | 风险 | 等级 |
+|---|---|---|---|
+| 1 | `:1267` 逐份循环 | 无 per-tick 预算，单 tick 阻塞 | **致命** |
+| 2 | `:2169` `addAdditionalDrops` 拆堆循环 | 方块被破坏时 O(amount/64)，1e9 份 = 1500 万次循环 + 1500 万 ItemStack | 中 |
+| 3 | `:345`/`:749` `cachedSlots` int | 容量缓存上限 2.1G | 中 |
+| 4 | `:693` `availableParallelSlots()` 返回 int | 对外容量上限；NeoECO 上游签名同 | 中（上游所限） |
+| 5 | `:1251` `assembled` int | 统计计数器截断（纯显示） | 轻 |
+| 6 | `:312` `MAX_ADVERTISED_PARALLEL_SLOTS` int | 系统属性可覆盖，但仍受 int 限 | 中 |
+| 7 | 溢出防护 `canAmortise` / `availableParallelSlots` | saturating 已到位 | 安全 |
+| 8 | `drainOutputs` | `OUTPUT_RETURN_TICKS` 平滑回送，每 tick 限量 | 安全（**可作修复范本**） |
+
+- **优化线路**（顺序有依赖，不可颠倒）：
+  - **P0 安全**：① 逐份循环加 per-tick 预算——照 `drainOutputs`/`OUTPUT_RETURN_TICKS` 的既有模式，预算耗尽 break，剩余份数由既有 `if (remaining <= 0) it.remove(); else entry.setValue(remaining);` 自动留回队列（**无需重写队列语义**）；② `addAdditionalDrops` 拆堆循环加保护。**未做 P0 前放宽上限只会加重症状**（单 tick 一次吃进更多份）。
+  - **P1 表示层 long 化**：`cachedSlots` int→long；`assembled` int→long；抽 `availableParallelSlotsLong()`、int 版转调并钳制（NeoECO 侧行为不变）。
+  - **P2 对外契约扩展**：万象构序 long 路径（`OmniBatchAdmission.maxCrafts()` 本为 long）；可选接入 `OmniBigIntegerCraftingProvider` 走 BigInteger（现已确认该契约存在）。NeoECO 路径无法突破（上游 int 签名）。
+  - **P3 审计补齐**：long 算术全量溢出审计；网络包与 NBT 的计数类型；其他 block entity 同类风险（`PatternDiskProviderLogic` 1024 槽上限、`PatternDiskAssemblerBlockEntity`）。
+- **验证**：P0 用单 tick 耗时监控（不超 50ms 预算）+ 极大 chunk 模拟测试；P1/P2 需回归 NeoECO 路径行为不变。
+- **关联**：P2 的 long 收益依赖万象构序适配（见条目 I，当前 ⏸）。
+
 ## 四、执行约束
 - 目标：NeoForge 21.1.241 / MC 1.21.1 / JDK 21 / AE2 19.2.17（编译依赖口径；`gradle.properties` 中的 `ae2_version=19.2.8` 为未使用的历史键）
 - 只用 AE2 公共 API；机器美术资源统一放本项目 `assets/ae2_pattern_disk/textures/`，不直接引用 `ae2:` 纹理（借用的复制件见 README 授权表；零件/物品显示模型仍继承 `ae2:item/display_base`、`ae2:part/display_off`、`ae2:item/cable_interface`）
